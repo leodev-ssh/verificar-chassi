@@ -1,0 +1,8 @@
+node_modules/
+server.log
+*.log
+
+# Dados reais de clientes/vendedores - não versionar
+data/*.xlsx
+uploads/
+*.xlsx

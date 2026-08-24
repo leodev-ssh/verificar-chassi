@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Verificador de Chassi</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #2a2e38;
+    --text: #e8eaed;
+    --muted: #9aa1ac;
+    --accent: #3b82f6;
+    --accent-dark: #2563eb;
+    --ok: #22c55e;
+    --err: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  .wrap {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+  }
+  h1 {
+    font-size: 22px;
+    margin: 0 0 4px;
+  }
+  .sub {
+    color: var(--muted);
+    font-size: 13px;
+    margin-bottom: 24px;
+  }
+  .search-box {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  input[type="text"] {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 14px 16px;
+    font-size: 20px;
+    border-radius: 10px;
+    letter-spacing: 2px;
+    outline: none;
+  }
+  input[type="text"]:focus {
+    border-color: var(--accent);
+  }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 0 22px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: var(--accent-dark); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .hint { color: var(--muted); font-size: 12px; margin-bottom: 28px; }
+  .msg {
+    padding: 12px 14px;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 16px;
+  }
+  .msg.err { background: rgba(239,68,68,0.12); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+  .msg.ok { background: rgba(34,197,94,0.12); color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-bottom: 14px;
+  }
+  .card .chassi {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+    color: var(--accent);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px 20px;
+  }
+  .field label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .field .val {
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  footer {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    padding: 10px 20px;
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  footer .status { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .upload-form {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .upload-form input[type="file"] {
+    color: var(--muted);
+    font-size: 12px;
+    max-width: 220px;
+  }
+  .upload-form button {
+    padding: 6px 14px;
+    font-size: 12px;
+  }
+  .empty {
+    text-align: center;
+    color: var(--muted);
+    padding: 40px 0;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Verificador de Chassi</h1>
+    <div class="sub">Digite os últimos 4 dígitos do chassi para localizar cliente, supervisor, modelo, cor e vendedor.</div>
+
+    <div class="search-box">
+      <input type="text" id="q" placeholder="Ex: 3721" maxlength="17" autofocus />
+      <button id="btnBuscar">Buscar</button>
+    </div>
+    <div class="hint">Aceita de 2 a 17 caracteres (números e letras) — quanto mais dígitos, mais preciso.</div>
+
+    <div id="msg"></div>
+    <div id="resultados"></div>
+  </div>
+
+  <footer>
+    <div class="status" id="status">Carregando status...</div>
+    <form class="upload-form" id="uploadForm">
+      <input type="file" id="arquivo" name="planilha" accept=".xlsx" />
+      <button type="submit">Atualizar base</button>
+    </form>
+  </footer>
+
+<script>
+const q = document.getElementById('q');
+const btnBuscar = document.getElementById('btnBuscar');
+const msgEl = document.getElementById('msg');
+const resultadosEl = document.getElementById('resultados');
+const statusEl = document.getElementById('status');
+
+function fieldsHtml(r) {
+  const fields = [
+    ['Cliente', r.cliente],
+    ['Supervisor', r.gestor],
+    ['Modelo', r.moto],
+    ['Cor', r.cor],
+    ['Vendedor', r.vendedor],
+    ['Status', r.status],
+    ['Envio', r.envio],
+    ['Vencimento', r.vence],
+  ];
+  return fields.map(([label, val]) => `
+    <div class="field">
+      <label>${label}</label>
+      <div class="val">${val || '—'}</div>
+    </div>
+  `).join('');
+}
+
+async function buscar() {
+  const termo = q.value.trim();
+  msgEl.innerHTML = '';
+  resultadosEl.innerHTML = '';
+  if (!termo) return;
+
+  btnBuscar.disabled = true;
+  try {
+    const resp = await fetch('/api/buscar?q=' + encodeURIComponent(termo));
+    const data = await resp.json();
+    if (!resp.ok) {
+      msgEl.innerHTML = `<div class="msg err">${data.erro}</div>`;
+      return;
+    }
+    if (data.total === 0) {
+      resultadosEl.innerHTML = '<div class="empty">Nenhum chassi encontrado.</div>';
+      return;
+    }
+    resultadosEl.innerHTML = data.resultados.map(r => `
+      <div class="card">
+        <div class="chassi">${r.chassi}</div>
+        <div class="grid">${fieldsHtml(r)}</div>
+      </div>
+    `).join('');
+  } catch (e) {
+    msgEl.innerHTML = `<div class="msg err">Erro ao buscar: ${e.message}</div>`;
+  } finally {
+    btnBuscar.disabled = false;
+  }
+}
+
+btnBuscar.addEventListener('click', buscar);
+q.addEventListener('keydown', (e) => { if (e.key === 'Enter') buscar(); });
+
+async function atualizarStatus() {
+  try {
+    const resp = await fetch('/api/status');
+    const data = await resp.json();
+    const data_fmt = data.ultimaAtualizacao
+      ? new Date(data.ultimaAtualizacao).toLocaleString('pt-BR')
+      : 'nunca';
+    statusEl.innerHTML = `<span>${data.totalChassis} chassis na base</span><span>Atualizado em: ${data_fmt}</span>` +
+      (data.ultimoErro ? `<span style="color:#f87171">Erro: ${data.ultimoErro}</span>` : '');
+  } catch (e) {
+    statusEl.textContent = 'Não foi possível obter status.';
+  }
+}
+
+document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const arquivo = document.getElementById('arquivo').files[0];
+  if (!arquivo) return;
+  const formData = new FormData();
+  formData.append('planilha', arquivo);
+  msgEl.innerHTML = '<div class="msg ok">Enviando e processando planilha...</div>';
+  try {
+    const resp = await fetch('/api/upload', { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (!resp.ok) {
+      msgEl.innerHTML = `<div class="msg err">${data.erro}</div>`;
+      return;
+    }
+    msgEl.innerHTML = `<div class="msg ok">Base atualizada: ${data.totalChassis} chassis carregados.</div>`;
+    atualizarStatus();
+  } catch (e) {
+    msgEl.innerHTML = `<div class="msg err">Erro ao enviar: ${e.message}</div>`;
+  }
+});
+
+atualizarStatus();
+</script>
+</body>
+</html>

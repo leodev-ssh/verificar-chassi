@@ -1,5 +1,5 @@
 import { getStore } from '@netlify/blobs';
-import { carregarRegistros, limparUpper, NOME_STORE } from '../../shared/planilha.mjs';
+import { carregarRegistros, carregarFilaEspera, filaDoModelo, limparUpper, NOME_STORE } from '../../shared/planilha.mjs';
 
 export default async (req: Request) => {
   const url = new URL(req.url);
@@ -14,12 +14,17 @@ export default async (req: Request) => {
 
   const store = getStore(NOME_STORE);
   const { registros } = await carregarRegistros(store);
+  const { filaEspera } = await carregarFilaEspera(store);
 
   const resultados = registros
     .filter((r: { chassi: string }) => r.chassi.endsWith(termo))
     .sort((a: { venceIso: string | null }, b: { venceIso: string | null }) =>
       (b.venceIso || '').localeCompare(a.venceIso || '')
-    );
+    )
+    .map((r: { moto: string }) => {
+      const fila = filaDoModelo(filaEspera, r.moto);
+      return { ...r, temFila: fila.length > 0, totalFila: fila.length };
+    });
   return Response.json({ termo, total: resultados.length, resultados });
 };
 

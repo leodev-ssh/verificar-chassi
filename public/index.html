@@ -25,9 +25,23 @@
     min-height: 100vh;
   }
   .wrap {
-    max-width: 900px;
+    max-width: 1200px;
     margin: 0 auto;
     padding: 32px 20px 80px;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+  .layout.com-fila {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+  @media (max-width: 820px) {
+    .layout.com-fila {
+      grid-template-columns: 1fr;
+    }
   }
   h1 {
     font-size: 22px;
@@ -147,6 +161,59 @@
   }
   .selo.vencido { background: rgba(239,68,68,0.18); color: #f87171; }
   .selo.no-prazo { background: rgba(34,197,94,0.18); color: #4ade80; }
+  .selos {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .selo.tem-fila { background: rgba(59,130,246,0.18); color: #60a5fa; cursor: pointer; }
+  .selo.sem-fila { background: rgba(154,161,172,0.15); color: var(--muted); }
+  .selo.tem-fila:hover { background: rgba(59,130,246,0.3); }
+
+  .painel-fila {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    position: sticky;
+    top: 20px;
+  }
+  .painel-fila h2 {
+    font-size: 14px;
+    margin: 0 0 2px;
+  }
+  .painel-fila .sub-fila {
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 14px;
+  }
+  .fila-item {
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .fila-item:first-child { border-top: none; }
+  .fila-item .linha1 {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .fila-item .pos {
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .fila-item .detalhe {
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .fila-vazia {
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 20px 0;
+  }
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -221,14 +288,23 @@
     <div class="hint">Aceita de 2 a 17 caracteres (números e letras) — quanto mais dígitos, mais preciso.</div>
 
     <div id="msg"></div>
-    <div id="resultados"></div>
+    <div class="layout" id="layout">
+      <div id="resultados"></div>
+      <div id="painelFilaWrap"></div>
+    </div>
   </div>
 
   <footer>
     <div class="status" id="status">Carregando status...</div>
     <form class="upload-form" id="uploadForm">
+      <label>Base de chassis:</label>
       <input type="file" id="arquivo" name="planilha" accept=".xlsx" />
       <button type="submit">Atualizar base</button>
+    </form>
+    <form class="upload-form" id="uploadFormFila">
+      <label>Fila de espera:</label>
+      <input type="file" id="arquivoFila" name="planilha" accept=".xlsx" />
+      <button type="submit">Atualizar fila</button>
     </form>
   </footer>
 
@@ -237,6 +313,8 @@ const q = document.getElementById('q');
 const btnBuscar = document.getElementById('btnBuscar');
 const msgEl = document.getElementById('msg');
 const resultadosEl = document.getElementById('resultados');
+const painelFilaWrap = document.getElementById('painelFilaWrap');
+const layoutEl = document.getElementById('layout');
 const statusEl = document.getElementById('status');
 
 function fieldsHtml(r) {
@@ -268,10 +346,49 @@ function statusVencimento(venceIso) {
   return venceIso < hojeIso ? 'vencido' : 'no-prazo';
 }
 
+function filaItemHtml(f) {
+  return `
+    <div class="fila-item">
+      <div class="linha1">
+        <span><span class="pos">${f.posicao}º</span> ${f.cliente || '—'}</span>
+      </div>
+      <div class="detalhe">${f.vendedor || '—'} · ${f.inclusao || '—'}</div>
+    </div>
+  `;
+}
+
+async function mostrarFilaModelo(moto) {
+  layoutEl.classList.add('com-fila');
+  painelFilaWrap.innerHTML = `<div class="painel-fila"><div class="fila-vazia">Carregando fila de ${moto}...</div></div>`;
+  try {
+    const resp = await fetch('/api/fila-modelo?moto=' + encodeURIComponent(moto));
+    const data = await resp.json();
+    if (!resp.ok || data.total === 0) {
+      painelFilaWrap.innerHTML = `
+        <div class="painel-fila">
+          <h2>Fila de espera</h2>
+          <div class="sub-fila">${moto}</div>
+          <div class="fila-vazia">Nenhum cliente na fila para este modelo.</div>
+        </div>`;
+      return;
+    }
+    painelFilaWrap.innerHTML = `
+      <div class="painel-fila">
+        <h2>Fila de espera</h2>
+        <div class="sub-fila">${moto} — ${data.total} cliente${data.total > 1 ? 's' : ''} aguardando</div>
+        ${data.fila.map(filaItemHtml).join('')}
+      </div>`;
+  } catch (e) {
+    painelFilaWrap.innerHTML = `<div class="painel-fila"><div class="fila-vazia">Erro ao carregar fila.</div></div>`;
+  }
+}
+
 async function buscar() {
   const termo = q.value.trim();
   msgEl.innerHTML = '';
   resultadosEl.innerHTML = '';
+  painelFilaWrap.innerHTML = '';
+  layoutEl.classList.remove('com-fila');
   if (!termo) return;
 
   btnBuscar.disabled = true;
@@ -289,19 +406,32 @@ async function buscar() {
     resultadosEl.innerHTML = data.resultados.map(r => {
       const status = statusVencimento(r.venceIso);
       const classeCard = status ? ` ${status}` : '';
-      const selo = status
+      const seloVenc = status
         ? `<span class="selo ${status}">${status === 'vencido' ? 'Vencido' : 'No prazo'}</span>`
         : '';
+      const seloFila = r.temFila
+        ? `<span class="selo tem-fila" data-moto="${r.moto}">Tem fila (${r.totalFila})</span>`
+        : `<span class="selo sem-fila">Sem fila</span>`;
       return `
       <div class="card${classeCard}">
         <div class="topo">
           <div class="chassi">${r.chassi}</div>
-          ${selo}
+          <div class="selos">${seloVenc}${seloFila}</div>
         </div>
         <div class="grid">${fieldsHtml(r)}</div>
       </div>
     `;
     }).join('');
+
+    resultadosEl.querySelectorAll('.selo.tem-fila').forEach((el) => {
+      el.addEventListener('click', () => mostrarFilaModelo(el.dataset.moto));
+    });
+
+    // Mostra automaticamente a fila do primeiro resultado com fila
+    const primeiroComFila = data.resultados.find((r) => r.temFila);
+    if (primeiroComFila) {
+      mostrarFilaModelo(primeiroComFila.moto);
+    }
   } catch (e) {
     msgEl.innerHTML = `<div class="msg err">Erro ao buscar: ${e.message}</div>`;
   } finally {
@@ -319,8 +449,14 @@ async function atualizarStatus() {
     const data_fmt = data.ultimaAtualizacao
       ? new Date(data.ultimaAtualizacao).toLocaleString('pt-BR')
       : 'nunca';
-    statusEl.innerHTML = `<span>${data.totalChassis} chassis na base</span><span>Atualizado em: ${data_fmt}</span>` +
-      (data.ultimoErro ? `<span style="color:#f87171">Erro: ${data.ultimoErro}</span>` : '');
+    const filaData_fmt = data.filaEsperaAtualizadaEm
+      ? new Date(data.filaEsperaAtualizadaEm).toLocaleString('pt-BR')
+      : 'nunca';
+    statusEl.innerHTML =
+      `<span>${data.totalChassis} chassis na base (${data_fmt})</span>` +
+      `<span>${data.totalFilaEspera || 0} na fila de espera (${filaData_fmt})</span>` +
+      (data.ultimoErro ? `<span style="color:#f87171">Erro base: ${data.ultimoErro}</span>` : '') +
+      (data.filaEsperaErro ? `<span style="color:#f87171">Erro fila: ${data.filaEsperaErro}</span>` : '');
   } catch (e) {
     statusEl.textContent = 'Não foi possível obter status.';
   }
@@ -341,6 +477,27 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
       return;
     }
     msgEl.innerHTML = `<div class="msg ok">Base atualizada: ${data.totalChassis} chassis carregados.</div>`;
+    atualizarStatus();
+  } catch (e) {
+    msgEl.innerHTML = `<div class="msg err">Erro ao enviar: ${e.message}</div>`;
+  }
+});
+
+document.getElementById('uploadFormFila').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const arquivo = document.getElementById('arquivoFila').files[0];
+  if (!arquivo) return;
+  const formData = new FormData();
+  formData.append('planilha', arquivo);
+  msgEl.innerHTML = '<div class="msg ok">Enviando e processando fila de espera...</div>';
+  try {
+    const resp = await fetch('/api/upload-fila', { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (!resp.ok) {
+      msgEl.innerHTML = `<div class="msg err">${data.erro}</div>`;
+      return;
+    }
+    msgEl.innerHTML = `<div class="msg ok">Fila de espera atualizada: ${data.totalFilaEspera} registros carregados.</div>`;
     atualizarStatus();
   } catch (e) {
     msgEl.innerHTML = `<div class="msg err">Erro ao enviar: ${e.message}</div>`;

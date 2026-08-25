@@ -314,13 +314,23 @@
     gap: 6px;
   }
   .resumo-card .cor-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font-size: 11px;
     color: var(--muted);
     background: rgba(255,255,255,0.04);
     border: 1px solid var(--border);
     border-radius: 999px;
-    padding: 2px 8px;
+    padding: 2px 8px 2px 6px;
     white-space: nowrap;
+  }
+  .cor-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.25);
+    flex-shrink: 0;
   }
 </style>
 </head>
@@ -375,9 +385,40 @@ const resumoFilaWrap = document.getElementById('resumoFilaWrap');
 const layoutEl = document.getElementById('layout');
 const statusEl = document.getElementById('status');
 
+// Mapa de nome de cor (como vem na planilha) para o tom visual real
+const CORES_HEX = {
+  'AZUL': '#3b82f6',
+  'AZUL METALICO': '#3b5f8f',
+  'AZUL MET': '#3b5f8f',
+  'BEGE': '#d9c7a3',
+  'BRANCA': '#f5f5f5',
+  'BRANCA PER': '#f5f5f5',
+  'BRANCA PER.': '#f5f5f5',
+  'CINZA': '#9ca3af',
+  'CINZA MET': '#7c828c',
+  'CINZA MET.': '#7c828c',
+  'DOURADA': '#d4af37',
+  'LARANJA': '#f97316',
+  'PRATA': '#c7cad1',
+  'PRATA MET': '#c7cad1',
+  'PRETA': '#1f2229',
+  'PRETA MET.': '#1f2229',
+  'PRETA PER': '#1f2229',
+  'VERDE': '#22c55e',
+  'VERMELHA': '#dc2626',
+  'VERM.MET': '#b91c1c',
+  'VERM.PER': '#b91c1c',
+};
+const COR_PADRAO = '#6b7280'; // usado para "QLQ COR", "QUALQUER COR" e cores desconhecidas
+
+function corSwatchHtml(nomeCor) {
+  const hex = CORES_HEX[nomeCor.toUpperCase()] || COR_PADRAO;
+  return `<span class="cor-swatch" style="background:${hex}"></span>`;
+}
+
 function resumoCardHtml(item) {
   const coresHtml = item.cores
-    .map((c) => `<span class="cor-tag">${c.cor}: ${c.quantidade}</span>`)
+    .map((c) => `<span class="cor-tag">${corSwatchHtml(c.cor)}${c.cor}: ${c.quantidade}</span>`)
     .join('');
   return `
     <div class="resumo-card">

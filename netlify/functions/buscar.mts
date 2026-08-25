@@ -15,7 +15,11 @@ export default async (req: Request) => {
   const store = getStore(NOME_STORE);
   const { registros } = await carregarRegistros(store);
 
-  const resultados = registros.filter((r: { chassi: string }) => r.chassi.endsWith(termo));
+  const resultados = registros
+    .filter((r: { chassi: string }) => r.chassi.endsWith(termo))
+    .sort((a: { venceIso: string | null }, b: { venceIso: string | null }) =>
+      (b.venceIso || '').localeCompare(a.venceIso || '')
+    );
   return Response.json({ termo, total: resultados.length, resultados });
 };
 

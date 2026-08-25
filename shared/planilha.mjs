@@ -27,6 +27,17 @@ export function formatarData(valor) {
   return `${dia.padStart(2, '0')}/${mes.padStart(2, '0')}/${ano}`;
 }
 
+// Extrai data ISO (YYYY-MM-DD) de "M/D/YY" para comparação, sem depender de fuso horário
+export function paraIso(valor) {
+  const texto = limpar(valor);
+  if (!texto) return null;
+  const m = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (!m) return null;
+  const [, mes, dia, anoRaw] = m;
+  const ano = anoRaw.length === 2 ? `20${anoRaw}` : anoRaw;
+  return `${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
+}
+
 function normalizarLinha(linha) {
   const chassi = limparUpper(linha['CHASSI']);
   if (!chassi) return null;
@@ -42,6 +53,7 @@ function normalizarLinha(linha) {
     cod: limpar(linha['CÓD.']),
     envio: formatarData(linha['ENVIO']),
     vence: formatarData(linha['VENCE']),
+    venceIso: paraIso(linha['VENCE']),
   };
 }
 
@@ -57,14 +69,16 @@ export function processarPlanilha(buffer) {
     }
   }
 
-  const mapaPorChassi = new Map();
+  const novosRegistros = [];
   for (const linha of linhas) {
     const registro = normalizarLinha(linha);
     if (!registro) continue;
-    mapaPorChassi.set(registro.chassi, registro);
+    // Mantém todas as ocorrências do mesmo chassi (ex.: distribuição original
+    // + redistribuição após vencimento para outro cliente)
+    novosRegistros.push(registro);
   }
 
-  return Array.from(mapaPorChassi.values());
+  return novosRegistros;
 }
 
 export async function salvarRegistros(store, registros) {

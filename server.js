@@ -43,6 +43,17 @@ function formatarData(valor) {
   return `${dia.padStart(2, '0')}/${mes.padStart(2, '0')}/${ano}`;
 }
 
+// Extrai data ISO (YYYY-MM-DD) de "M/D/YY" para comparação, sem depender de fuso horário
+function paraIso(valor) {
+  const texto = limpar(valor);
+  if (!texto) return null;
+  const m = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (!m) return null;
+  const [, mes, dia, anoRaw] = m;
+  const ano = anoRaw.length === 2 ? `20${anoRaw}` : anoRaw;
+  return `${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
+}
+
 // --- Base em memória ---
 let registros = [];
 let ultimaAtualizacao = null;
@@ -63,6 +74,7 @@ function normalizarLinha(linha) {
     cod: limpar(linha['CÓD.']),
     envio: formatarData(linha['ENVIO']),
     vence: formatarData(linha['VENCE']),
+    venceIso: paraIso(linha['VENCE']),
   };
 }
 
@@ -79,18 +91,19 @@ function carregarPlanilha(caminhoArquivo) {
     }
   }
 
-  const mapaPorChassi = new Map();
+  const novosRegistros = [];
   for (const linha of linhas) {
     const registro = normalizarLinha(linha);
     if (!registro) continue;
-    // Em caso de chassi duplicado (reenvio), mantém o último encontrado
-    mapaPorChassi.set(registro.chassi, registro);
+    // Mantém todas as ocorrências do mesmo chassi (ex.: distribuição original
+    // + redistribuição após vencimento para outro cliente)
+    novosRegistros.push(registro);
   }
 
-  registros = Array.from(mapaPorChassi.values());
+  registros = novosRegistros;
   ultimaAtualizacao = new Date();
   ultimoErro = null;
-  console.log(`[base] Carregados ${registros.length} chassis únicos de ${caminhoArquivo}`);
+  console.log(`[base] Carregados ${registros.length} registros de ${caminhoArquivo}`);
 }
 
 function carregarInicial() {
@@ -129,7 +142,9 @@ app.get('/api/buscar', (req, res) => {
     return res.status(400).json({ erro: 'Digite apenas letras e números do chassi.' });
   }
 
-  const resultados = registros.filter((r) => r.chassi.endsWith(termo));
+  const resultados = registros
+    .filter((r) => r.chassi.endsWith(termo))
+    .sort((a, b) => (b.venceIso || '').localeCompare(a.venceIso || ''));
   res.json({ termo, total: resultados.length, resultados });
 });
 

@@ -110,17 +110,43 @@
   .card {
     background: var(--panel);
     border: 1px solid var(--border);
+    border-left: 4px solid var(--border);
     border-radius: 12px;
     padding: 18px 20px;
     margin-bottom: 14px;
+  }
+  .card.vencido {
+    border-left-color: var(--err);
+    background: rgba(239, 68, 68, 0.08);
+  }
+  .card.no-prazo {
+    border-left-color: var(--ok);
+    background: rgba(34, 197, 94, 0.08);
+  }
+  .card .topo {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
   }
   .card .chassi {
     font-size: 17px;
     font-weight: 700;
     letter-spacing: 1px;
-    margin-bottom: 12px;
     color: var(--accent);
   }
+  .selo {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .selo.vencido { background: rgba(239,68,68,0.18); color: #f87171; }
+  .selo.no-prazo { background: rgba(34,197,94,0.18); color: #4ade80; }
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -215,12 +241,12 @@ const statusEl = document.getElementById('status');
 
 function fieldsHtml(r) {
   const fields = [
-    ['Cliente', r.cliente],
-    ['Supervisor', r.gestor],
     ['Modelo', r.moto],
     ['Cor', r.cor],
+    ['Supervisor', r.gestor],
     ['Vendedor', r.vendedor],
-    ['Status', r.status],
+    ['Cliente', r.cliente],
+    ['Modalidade', r.status],
     ['Envio', r.envio],
     ['Vencimento', r.vence],
   ];
@@ -230,6 +256,16 @@ function fieldsHtml(r) {
       <div class="val">${val || '—'}</div>
     </div>
   `).join('');
+}
+
+// Compara a data de vencimento (YYYY-MM-DD) com hoje, no fuso local
+function statusVencimento(venceIso) {
+  if (!venceIso) return null;
+  const hoje = new Date();
+  const hojeIso = hoje.getFullYear() + '-' +
+    String(hoje.getMonth() + 1).padStart(2, '0') + '-' +
+    String(hoje.getDate()).padStart(2, '0');
+  return venceIso < hojeIso ? 'vencido' : 'no-prazo';
 }
 
 async function buscar() {
@@ -250,12 +286,22 @@ async function buscar() {
       resultadosEl.innerHTML = '<div class="empty">Nenhum chassi encontrado.</div>';
       return;
     }
-    resultadosEl.innerHTML = data.resultados.map(r => `
-      <div class="card">
-        <div class="chassi">${r.chassi}</div>
+    resultadosEl.innerHTML = data.resultados.map(r => {
+      const status = statusVencimento(r.venceIso);
+      const classeCard = status ? ` ${status}` : '';
+      const selo = status
+        ? `<span class="selo ${status}">${status === 'vencido' ? 'Vencido' : 'No prazo'}</span>`
+        : '';
+      return `
+      <div class="card${classeCard}">
+        <div class="topo">
+          <div class="chassi">${r.chassi}</div>
+          ${selo}
+        </div>
         <div class="grid">${fieldsHtml(r)}</div>
       </div>
-    `).join('');
+    `;
+    }).join('');
   } catch (e) {
     msgEl.innerHTML = `<div class="msg err">Erro ao buscar: ${e.message}</div>`;
   } finally {

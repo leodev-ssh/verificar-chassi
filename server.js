@@ -267,6 +267,31 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+app.get('/api/fila-resumo', (req, res) => {
+  const porModelo = new Map();
+  for (const item of filaEspera) {
+    if (!porModelo.has(item.modelo)) {
+      porModelo.set(item.modelo, { modelo: item.modelo, total: 0, cores: new Map() });
+    }
+    const grupo = porModelo.get(item.modelo);
+    grupo.total += 1;
+    const cor = item.cor || 'SEM COR';
+    grupo.cores.set(cor, (grupo.cores.get(cor) || 0) + 1);
+  }
+
+  const resumo = Array.from(porModelo.values())
+    .map((g) => ({
+      modelo: g.modelo,
+      total: g.total,
+      cores: Array.from(g.cores.entries())
+        .map(([cor, quantidade]) => ({ cor, quantidade }))
+        .sort((a, b) => b.quantidade - a.quantidade),
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  res.json({ total: filaEspera.length, resumo });
+});
+
 app.get('/api/buscar', (req, res) => {
   const termo = limparUpper(req.query.q || '');
   if (!termo) {

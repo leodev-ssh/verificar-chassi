@@ -219,4 +219,27 @@ export function filaDoModelo(filaEspera, moto) {
     .map((f, i) => ({ posicao: i + 1, ...f }));
 }
 
+export function resumoFilaEspera(filaEspera) {
+  const porModelo = new Map();
+  for (const item of filaEspera) {
+    if (!porModelo.has(item.modelo)) {
+      porModelo.set(item.modelo, { modelo: item.modelo, total: 0, cores: new Map() });
+    }
+    const grupo = porModelo.get(item.modelo);
+    grupo.total += 1;
+    const cor = item.cor || 'SEM COR';
+    grupo.cores.set(cor, (grupo.cores.get(cor) || 0) + 1);
+  }
+
+  return Array.from(porModelo.values())
+    .map((g) => ({
+      modelo: g.modelo,
+      total: g.total,
+      cores: Array.from(g.cores.entries())
+        .map(([cor, quantidade]) => ({ cor, quantidade }))
+        .sort((a, b) => b.quantidade - a.quantidade),
+    }))
+    .sort((a, b) => b.total - a.total);
+}
+
 export { NOME_STORE, CHAVE_REGISTROS, CHAVE_FILA_ESPERA };

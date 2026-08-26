@@ -2,6 +2,9 @@ node_modules/
 server.log
 *.log
 .netlify/
+.env
+data/ips_bloqueados.json
+data/log_acessos.json
 
 # Dados reais de clientes/vendedores - não versionar
 data/*.xlsx

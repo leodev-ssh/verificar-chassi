@@ -1,9 +1,22 @@
 import { getStore } from '@netlify/blobs';
+import type { Context } from '@netlify/functions';
 import { carregarRegistros, carregarFilaEspera, filaDoModelo, limparUpper, NOME_STORE } from '../../shared/planilha.mjs';
+import { carregarIpsBloqueados, registrarAcesso } from '../../shared/admin.mjs';
 
-export default async (req: Request) => {
+export default async (req: Request, context: Context) => {
   const url = new URL(req.url);
   const termo = limparUpper(url.searchParams.get('q') || '');
+  const ip = context.ip || '';
+
+  const store = getStore(NOME_STORE);
+
+  const ipsBloqueados = await carregarIpsBloqueados(store);
+  if (ip && ipsBloqueados.includes(ip)) {
+    return Response.json({ erro: 'Acesso bloqueado.' }, { status: 403 });
+  }
+
+  // Best-effort: roda em segundo plano, sem atrasar nem poder derrubar a busca.
+  context.waitUntil(registrarAcesso(store, ip));
 
   if (!termo) {
     return Response.json({ erro: 'Informe os últimos dígitos do chassi.' }, { status: 400 });
@@ -12,7 +25,6 @@ export default async (req: Request) => {
     return Response.json({ erro: 'Digite apenas letras e números do chassi.' }, { status: 400 });
   }
 
-  const store = getStore(NOME_STORE);
   const { registros } = await carregarRegistros(store);
   const { filaEspera } = await carregarFilaEspera(store);
 

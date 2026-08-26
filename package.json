@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "@netlify/blobs": "^8.1.0",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.4.2",
     "express": "^4.19.2",
     "multer": "^2.0.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"

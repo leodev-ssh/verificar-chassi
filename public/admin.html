@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Admin — Verificador de Chassi</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #2a2e38;
+    --text: #e8eaed;
+    --muted: #9aa1ac;
+    --accent: #3b82f6;
+    --accent-dark: #2563eb;
+    --ok: #22c55e;
+    --err: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  .wrap {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+  }
+  h1 { font-size: 22px; margin: 0 0 24px; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  a { color: var(--accent); }
+
+  .login-box {
+    max-width: 360px;
+    margin: 80px auto;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+  }
+  .login-box h1 { font-size: 18px; margin-bottom: 16px; }
+  input[type="password"], input[type="text"] {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 12px 14px;
+    font-size: 15px;
+    border-radius: 8px;
+    outline: none;
+    margin-bottom: 12px;
+  }
+  input:focus { border-color: var(--accent); }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: var(--accent-dark); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.secundario {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  button.perigo { background: var(--err); }
+  button.perigo:hover { background: #dc2626; }
+
+  .msg {
+    padding: 12px 14px;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 16px;
+  }
+  .msg.err { background: rgba(239,68,68,0.12); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+  .msg.ok { background: rgba(34,197,94,0.12); color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    font-size: 13px;
+  }
+  .status-grid .rotulo { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+  .status-grid .valor { font-weight: 600; margin-top: 2px; }
+
+  .upload-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .upload-row label { font-size: 13px; color: var(--muted); min-width: 110px; }
+  .upload-row input[type="file"] { flex: 1; min-width: 200px; margin: 0; padding: 8px; font-size: 12px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; }
+  .ip-add { display: flex; gap: 8px; margin-top: 14px; }
+  .ip-add input { margin-bottom: 0; }
+  .tag-bloqueado { color: #f87171; font-size: 11px; font-weight: 700; }
+  .empty { color: var(--muted); font-size: 13px; padding: 12px 0; }
+  .topo-admin { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+</style>
+</head>
+<body>
+  <div class="wrap" id="loginWrap" style="display:none">
+    <div class="login-box">
+      <h1>Painel administrativo</h1>
+      <div id="loginMsg"></div>
+      <input type="password" id="senha" placeholder="Senha" autofocus />
+      <button id="btnLogin" style="width:100%">Entrar</button>
+    </div>
+  </div>
+
+  <div class="wrap" id="painelWrap" style="display:none">
+    <div class="topo-admin">
+      <h1>Painel administrativo</h1>
+      <div>
+        <a href="/">← Voltar à busca</a>
+        &nbsp;·&nbsp;
+        <button class="secundario" id="btnLogout">Sair</button>
+      </div>
+    </div>
+
+    <div id="msg"></div>
+
+    <div class="card">
+      <h2>Status da base</h2>
+      <div class="status-grid" id="statusGrid">Carregando...</div>
+    </div>
+
+    <div class="card">
+      <h2>Atualizar planilhas</h2>
+      <div class="upload-row">
+        <label>Base de chassis:</label>
+        <input type="file" id="arquivo" accept=".xlsx" />
+        <button id="btnUploadBase">Enviar</button>
+      </div>
+      <div class="upload-row">
+        <label>Fila de espera:</label>
+        <input type="file" id="arquivoFila" accept=".xlsx" />
+        <button id="btnUploadFila">Enviar</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>IPs bloqueados</h2>
+      <table id="tabelaBloqueados"><tbody></tbody></table>
+      <div class="ip-add">
+        <input type="text" id="novoIp" placeholder="Ex: 200.150.10.20" />
+        <button id="btnBloquearNovo">Bloquear IP</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Acessos recentes (por IP)</h2>
+      <div class="empty" style="margin-bottom:8px">Registrado a partir de agora — não há histórico anterior à ativação deste painel.</div>
+      <table id="tabelaIps">
+        <thead><tr><th>IP</th><th>Acessos</th><th>Último acesso</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+const loginWrap = document.getElementById('loginWrap');
+const painelWrap = document.getElementById('painelWrap');
+const loginMsg = document.getElementById('loginMsg');
+const msgEl = document.getElementById('msg');
+const senhaInput = document.getElementById('senha');
+
+function fmtData(iso) {
+  return iso ? new Date(iso).toLocaleString('pt-BR') : 'nunca';
+}
+
+async function tentarLogin() {
+  const senha = senhaInput.value;
+  if (!senha) return;
+  loginMsg.innerHTML = '';
+  try {
+    const resp = await fetch('/api/admin-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ senha }),
+    });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      loginMsg.innerHTML = `<div class="msg err">${data.erro || 'Senha incorreta.'}</div>`;
+      return;
+    }
+    mostrarPainel();
+  } catch (e) {
+    loginMsg.innerHTML = `<div class="msg err">Erro ao entrar: ${e.message}</div>`;
+  }
+}
+
+document.getElementById('btnLogin').addEventListener('click', tentarLogin);
+senhaInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') tentarLogin(); });
+
+document.getElementById('btnLogout').addEventListener('click', async () => {
+  await fetch('/api/admin-logout', { method: 'POST' });
+  location.reload();
+});
+
+function renderStatus(data) {
+  document.getElementById('statusGrid').innerHTML = `
+    <div><div class="rotulo">Chassis na base</div><div class="valor">${data.totalChassis}</div></div>
+    <div><div class="rotulo">Base atualizada em</div><div class="valor">${fmtData(data.ultimaAtualizacao)}</div></div>
+    <div><div class="rotulo">Fila de espera</div><div class="valor">${data.totalFilaEspera}</div></div>
+    <div><div class="rotulo">Fila atualizada em</div><div class="valor">${fmtData(data.filaEsperaAtualizadaEm)}</div></div>
+  `;
+}
+
+function renderBloqueados(ipsBloqueados) {
+  const tbody = document.querySelector('#tabelaBloqueados tbody');
+  if (!ipsBloqueados.length) {
+    tbody.innerHTML = '<tr><td class="empty">Nenhum IP bloqueado.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = ipsBloqueados.map((ip) => `
+    <tr>
+      <td>${ip}</td>
+      <td style="text-align:right"><button class="secundario" data-ip="${ip}" data-acao="desbloquear">Desbloquear</button></td>
+    </tr>
+  `).join('');
+  tbody.querySelectorAll('button[data-acao="desbloquear"]').forEach((btn) => {
+    btn.addEventListener('click', () => alterarBloqueio(btn.dataset.ip, 'desbloquear'));
+  });
+}
+
+function renderIps(ips, ipsBloqueados) {
+  const tbody = document.querySelector('#tabelaIps tbody');
+  if (!ips.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">Nenhum acesso registrado ainda.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = ips.map((item) => {
+    const bloqueado = ipsBloqueados.includes(item.ip);
+    return `
+      <tr>
+        <td>${item.ip} ${bloqueado ? '<span class="tag-bloqueado">BLOQUEADO</span>' : ''}</td>
+        <td>${item.total}</td>
+        <td>${fmtData(item.ultimoAcesso)}</td>
+        <td style="text-align:right">
+          <button class="${bloqueado ? 'secundario' : 'perigo'}" data-ip="${item.ip}" data-acao="${bloqueado ? 'desbloquear' : 'bloquear'}">
+            ${bloqueado ? 'Desbloquear' : 'Bloquear'}
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+  tbody.querySelectorAll('button[data-acao]').forEach((btn) => {
+    btn.addEventListener('click', () => alterarBloqueio(btn.dataset.ip, btn.dataset.acao));
+  });
+}
+
+async function alterarBloqueio(ip, acao) {
+  try {
+    const resp = await fetch('/api/admin-bloquear-ip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip, acao }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      msgEl.innerHTML = `<div class="msg err">${data.erro}</div>`;
+      return;
+    }
+    msgEl.innerHTML = `<div class="msg ok">IP ${ip} ${acao === 'bloquear' ? 'bloqueado' : 'desbloqueado'}.</div>`;
+    carregarDados();
+  } catch (e) {
+    msgEl.innerHTML = `<div class="msg err">Erro: ${e.message}</div>`;
+  }
+}
+
+document.getElementById('btnBloquearNovo').addEventListener('click', () => {
+  const ip = document.getElementById('novoIp').value.trim();
+  if (!ip) return;
+  alterarBloqueio(ip, 'bloquear');
+  document.getElementById('novoIp').value = '';
+});
+
+async function carregarDados() {
+  try {
+    const resp = await fetch('/api/admin-dados');
+    if (resp.status === 401) {
+      mostrarLogin();
+      return;
+    }
+    const data = await resp.json();
+    renderStatus(data);
+    renderBloqueados(data.ipsBloqueados);
+    renderIps(data.ips, data.ipsBloqueados);
+  } catch (e) {
+    msgEl.innerHTML = `<div class="msg err">Erro ao carregar dados: ${e.message}</div>`;
+  }
+}
+
+async function enviarPlanilha(inputId, endpoint, rotulo) {
+  const arquivo = document.getElementById(inputId).files[0];
+  if (!arquivo) return;
+  const formData = new FormData();
+  formData.append('planilha', arquivo);
+  msgEl.innerHTML = `<div class="msg ok">Enviando ${rotulo}...</div>`;
+  try {
+    const resp = await fetch(endpoint, { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (!resp.ok) {
+      msgEl.innerHTML = `<div class="msg err">${data.erro}</div>`;
+      return;
+    }
+    msgEl.innerHTML = `<div class="msg ok">${rotulo} atualizada com sucesso.</div>`;
+    carregarDados();
+  } catch (e) {
+    msgEl.innerHTML = `<div class="msg err">Erro ao enviar: ${e.message}</div>`;
+  }
+}
+
+document.getElementById('btnUploadBase').addEventListener('click', () => enviarPlanilha('arquivo', '/api/upload', 'Base de chassis'));
+document.getElementById('btnUploadFila').addEventListener('click', () => enviarPlanilha('arquivoFila', '/api/upload-fila', 'Fila de espera'));
+
+function mostrarLogin() {
+  loginWrap.style.display = '';
+  painelWrap.style.display = 'none';
+}
+
+function mostrarPainel() {
+  loginWrap.style.display = 'none';
+  painelWrap.style.display = '';
+  carregarDados();
+}
+
+// Verifica se já existe sessão válida (cookie); senão, mostra login.
+fetch('/api/admin-dados').then((r) => {
+  if (r.status === 401) mostrarLogin();
+  else mostrarPainel();
+});
+</script>
+</body>
+</html>

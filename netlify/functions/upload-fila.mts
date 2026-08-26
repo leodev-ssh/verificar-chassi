@@ -1,7 +1,12 @@
 import { getStore } from '@netlify/blobs';
 import { processarFilaEspera, salvarFilaEspera, NOME_STORE } from '../../shared/planilha.mjs';
+import { lerCookie, tokenSessaoValido, NOME_COOKIE_SESSAO } from '../../shared/admin.mjs';
 
 export default async (req: Request) => {
+  const token = lerCookie(req.headers.get('cookie'), NOME_COOKIE_SESSAO);
+  if (!tokenSessaoValido(token)) {
+    return Response.json({ erro: 'Não autenticado.' }, { status: 401 });
+  }
   if (req.method !== 'POST') {
     return Response.json({ erro: 'Método não permitido.' }, { status: 405 });
   }

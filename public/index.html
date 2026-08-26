@@ -247,20 +247,6 @@
     gap: 8px;
   }
   footer .status { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
-  .upload-form {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-  .upload-form input[type="file"] {
-    color: var(--muted);
-    font-size: 12px;
-    max-width: 220px;
-  }
-  .upload-form button {
-    padding: 6px 14px;
-    font-size: 12px;
-  }
   .empty {
     text-align: center;
     color: var(--muted);
@@ -354,16 +340,6 @@
 
   <footer>
     <div class="status" id="status">Carregando status...</div>
-    <form class="upload-form" id="uploadForm">
-      <label>Base de chassis:</label>
-      <input type="file" id="arquivo" name="planilha" accept=".xlsx" />
-      <button type="submit">Atualizar base</button>
-    </form>
-    <form class="upload-form" id="uploadFormFila">
-      <label>Fila de espera:</label>
-      <input type="file" id="arquivoFila" name="planilha" accept=".xlsx" />
-      <button type="submit">Atualizar fila</button>
-    </form>
   </footer>
 
 <script>
@@ -600,49 +576,6 @@ async function atualizarStatus() {
     statusEl.textContent = 'Não foi possível obter status.';
   }
 }
-
-document.getElementById('uploadForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const arquivo = document.getElementById('arquivo').files[0];
-  if (!arquivo) return;
-  const formData = new FormData();
-  formData.append('planilha', arquivo);
-  msgEl.innerHTML = '<div class="msg ok">Enviando e processando planilha...</div>';
-  try {
-    const resp = await fetch('/api/upload', { method: 'POST', body: formData });
-    const data = await resp.json();
-    if (!resp.ok) {
-      msgEl.innerHTML = `<div class="msg err">${data.erro}</div>`;
-      return;
-    }
-    msgEl.innerHTML = `<div class="msg ok">Base atualizada: ${data.totalChassis} chassis carregados.</div>`;
-    atualizarStatus();
-  } catch (e) {
-    msgEl.innerHTML = `<div class="msg err">Erro ao enviar: ${e.message}</div>`;
-  }
-});
-
-document.getElementById('uploadFormFila').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const arquivo = document.getElementById('arquivoFila').files[0];
-  if (!arquivo) return;
-  const formData = new FormData();
-  formData.append('planilha', arquivo);
-  msgEl.innerHTML = '<div class="msg ok">Enviando e processando fila de espera...</div>';
-  try {
-    const resp = await fetch('/api/upload-fila', { method: 'POST', body: formData });
-    const data = await resp.json();
-    if (!resp.ok) {
-      msgEl.innerHTML = `<div class="msg err">${data.erro}</div>`;
-      return;
-    }
-    msgEl.innerHTML = `<div class="msg ok">Fila de espera atualizada: ${data.totalFilaEspera} registros carregados.</div>`;
-    atualizarStatus();
-    carregarResumoFila();
-  } catch (e) {
-    msgEl.innerHTML = `<div class="msg err">Erro ao enviar: ${e.message}</div>`;
-  }
-});
 
 atualizarStatus();
 carregarResumoFila();

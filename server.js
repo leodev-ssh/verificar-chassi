@@ -1,13 +1,21 @@
+require('dotenv').config({ quiet: true });
 const express = require('express');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const cookieParser = require('cookie-parser');
 
 const PORT = process.env.PORT || 3300;
 const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'fila_completa.xlsx');
 const FILA_ESPERA_FILE = path.join(DATA_DIR, 'lista_de_espera.xlsx');
+const IPS_BLOQUEADOS_FILE = path.join(DATA_DIR, 'ips_bloqueados.json');
+const LOG_ACESSOS_FILE = path.join(DATA_DIR, 'log_acessos.json');
+const MAX_LOG_ACESSOS = 500;
+const NOME_COOKIE_SESSAO = 'vc_admin';
+const DURACAO_SESSAO_MS = 12 * 60 * 60 * 1000; // 12 horas
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -249,11 +257,100 @@ function carregarInicial() {
   }
 }
 
+// --- Admin: sessão, IPs bloqueados, log de acessos (persistidos em data/) ---
+function segredoSessao() {
+  const senha = process.env.ADMIN_PASSWORD;
+  if (!senha) throw new Error('ADMIN_PASSWORD não configurada.');
+  return senha;
+}
+
+function criarTokenSessao() {
+  const expiraEm = Date.now() + DURACAO_SESSAO_MS;
+  const assinatura = crypto.createHmac('sha256', segredoSessao()).update(String(expiraEm)).digest('hex');
+  return `${expiraEm}.${assinatura}`;
+}
+
+function tokenSessaoValido(token) {
+  if (!token) return false;
+  const [expiraEmStr, assinatura] = String(token).split('.');
+  if (!expiraEmStr || !assinatura) return false;
+  const expiraEm = Number(expiraEmStr);
+  if (!Number.isFinite(expiraEm) || expiraEm < Date.now()) return false;
+  const esperado = crypto.createHmac('sha256', segredoSessao()).update(expiraEmStr).digest('hex');
+  const a = Buffer.from(assinatura);
+  const b = Buffer.from(esperado);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+function senhaCorreta(senhaInformada) {
+  const esperada = process.env.ADMIN_PASSWORD;
+  if (!esperada || !senhaInformada) return false;
+  const a = Buffer.from(String(senhaInformada));
+  const b = Buffer.from(String(esperada));
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+function exigirSessao(req, res, next) {
+  if (!tokenSessaoValido(req.cookies?.[NOME_COOKIE_SESSAO])) {
+    return res.status(401).json({ erro: 'Não autenticado.' });
+  }
+  next();
+}
+
+function lerJsonSeguro(caminho, valorPadrao) {
+  try {
+    if (!fs.existsSync(caminho)) return valorPadrao;
+    return JSON.parse(fs.readFileSync(caminho, 'utf8'));
+  } catch {
+    return valorPadrao;
+  }
+}
+
+function carregarIpsBloqueados() {
+  const lista = lerJsonSeguro(IPS_BLOQUEADOS_FILE, []);
+  return Array.isArray(lista) ? lista : [];
+}
+
+function salvarIpsBloqueados(lista) {
+  fs.writeFileSync(IPS_BLOQUEADOS_FILE, JSON.stringify(lista));
+}
+
+function registrarAcesso(ip) {
+  if (!ip) return;
+  try {
+    const log = lerJsonSeguro(LOG_ACESSOS_FILE, []);
+    log.unshift({ ip, em: new Date().toISOString() });
+    fs.writeFileSync(LOG_ACESSOS_FILE, JSON.stringify(log.slice(0, MAX_LOG_ACESSOS)));
+  } catch (e) {
+    console.error('[admin] Erro ao registrar acesso:', e.message);
+  }
+}
+
+function resumoIps(log) {
+  const porIp = new Map();
+  for (const item of log) {
+    if (!porIp.has(item.ip)) porIp.set(item.ip, { ip: item.ip, total: 0, ultimoAcesso: item.em });
+    porIp.get(item.ip).total += 1;
+  }
+  return Array.from(porIp.values()).sort((a, b) => b.ultimoAcesso.localeCompare(a.ultimoAcesso));
+}
+
+function ipDoRequest(req) {
+  // Atrás de proxy (Railway, Netlify, etc.) o IP real vem em X-Forwarded-For
+  const xff = req.headers['x-forwarded-for'];
+  if (xff) return xff.split(',')[0].trim();
+  return req.socket.remoteAddress || '';
+}
+
 carregarInicial();
 carregarFilaEsperaInicial();
 
 // --- App ---
 const app = express();
+app.use(cookieParser());
+app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/status', (req, res) => {
@@ -293,6 +390,12 @@ app.get('/api/fila-resumo', (req, res) => {
 });
 
 app.get('/api/buscar', (req, res) => {
+  const ip = ipDoRequest(req);
+  if (ip && carregarIpsBloqueados().includes(ip)) {
+    return res.status(403).json({ erro: 'Acesso bloqueado.' });
+  }
+  registrarAcesso(ip);
+
   const termo = limparUpper(req.query.q || '');
   if (!termo) {
     return res.status(400).json({ erro: 'Informe os últimos dígitos do chassi.' });
@@ -320,7 +423,7 @@ app.get('/api/fila-modelo', (req, res) => {
   res.json({ moto, total: fila.length, fila });
 });
 
-app.post('/api/upload', (req, res) => {
+app.post('/api/upload', exigirSessao, (req, res) => {
   upload.single('planilha')(req, res, (err) => {
     if (err) {
       return res.status(400).json({ erro: err.message });
@@ -341,7 +444,7 @@ app.post('/api/upload', (req, res) => {
   });
 });
 
-app.post('/api/upload-fila', (req, res) => {
+app.post('/api/upload-fila', exigirSessao, (req, res) => {
   upload.single('planilha')(req, res, (err) => {
     if (err) {
       return res.status(400).json({ erro: err.message });
@@ -358,6 +461,48 @@ app.post('/api/upload-fila', (req, res) => {
       res.status(400).json({ erro: 'Não foi possível processar a planilha de fila de espera: ' + e.message });
     }
   });
+});
+
+app.post('/api/admin-login', (req, res) => {
+  const { senha } = req.body || {};
+  if (!senhaCorreta(senha)) {
+    return res.status(401).json({ erro: 'Senha incorreta.' });
+  }
+  res.cookie(NOME_COOKIE_SESSAO, criarTokenSessao(), {
+    httpOnly: true,
+    sameSite: 'strict',
+    maxAge: DURACAO_SESSAO_MS,
+  });
+  res.json({ ok: true });
+});
+
+app.post('/api/admin-logout', (req, res) => {
+  res.clearCookie(NOME_COOKIE_SESSAO);
+  res.json({ ok: true });
+});
+
+app.get('/api/admin-dados', exigirSessao, (req, res) => {
+  const log = lerJsonSeguro(LOG_ACESSOS_FILE, []);
+  res.json({
+    totalChassis: registros.length,
+    ultimaAtualizacao,
+    totalFilaEspera: filaEspera.length,
+    filaEsperaAtualizadaEm,
+    ipsBloqueados: carregarIpsBloqueados(),
+    ips: resumoIps(log),
+  });
+});
+
+app.post('/api/admin-bloquear-ip', exigirSessao, (req, res) => {
+  const { ip, acao } = req.body || {};
+  if (!ip) {
+    return res.status(400).json({ erro: 'Informe o IP.' });
+  }
+  const atual = carregarIpsBloqueados();
+  const novaLista =
+    acao === 'desbloquear' ? atual.filter((item) => item !== ip) : Array.from(new Set([...atual, ip]));
+  salvarIpsBloqueados(novaLista);
+  res.json({ ok: true, ipsBloqueados: novaLista });
 });
 
 app.listen(PORT, () => {

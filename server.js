@@ -187,13 +187,37 @@ const MAPA_MOTO_PARA_MODELO_FILA = {
   'XRE 300 SAHARA RALLY': 'SAHARA',
 };
 
-function filaDoModelo(moto) {
+// Reduz a cor à sua "cor base" (primeira palavra), já que o chassi usa
+// nomes granulares (ex.: "CINZA PER", "PRETA MET.", "VERM.FOSCA") e a fila
+// usa nomes simples (ex.: "CINZA", "PRETA", "VERMELHA").
+const CORINGAS_COR = new Set(['QLQ COR', 'QUALQUER COR']);
+
+function corBase(cor) {
+  const upper = limparUpper(cor);
+  if (!upper) return '';
+  if (CORINGAS_COR.has(upper)) return '*';
+  // "VERM.MET" -> "VERM" (aproxima de VERMELHA pelo prefixo comum)
+  const primeiraPalavra = upper.split(/[\s.]+/)[0];
+  return primeiraPalavra;
+}
+
+function coresCompativeis(corChassi, corFila) {
+  const baseFila = corBase(corFila);
+  if (baseFila === '*') return true; // fila aceita qualquer cor
+  const baseChassi = corBase(corChassi);
+  if (!baseChassi || !baseFila) return false;
+  // "VERM" (do chassi) deve bater com "VERMELHA" (da fila) e vice-versa
+  return baseChassi.startsWith(baseFila) || baseFila.startsWith(baseChassi);
+}
+
+function filaDoModelo(moto, cor) {
   const motoUpper = limparUpper(moto);
   const modeloFila = MAPA_MOTO_PARA_MODELO_FILA[motoUpper];
   if (!modeloFila) return [];
 
   return filaEspera
     .filter((f) => f.modelo === modeloFila)
+    .filter((f) => (cor ? coresCompativeis(cor, f.cor) : true))
     .map((f, i) => ({ posicao: i + 1, ...f }));
 }
 
@@ -408,7 +432,7 @@ app.get('/api/buscar', (req, res) => {
     .filter((r) => r.chassi.endsWith(termo))
     .sort((a, b) => (b.venceIso || '').localeCompare(a.venceIso || ''))
     .map((r) => {
-      const fila = filaDoModelo(r.moto);
+      const fila = filaDoModelo(r.moto, r.cor);
       return { ...r, temFila: fila.length > 0, totalFila: fila.length };
     });
   res.json({ termo, total: resultados.length, resultados });
@@ -416,11 +440,12 @@ app.get('/api/buscar', (req, res) => {
 
 app.get('/api/fila-modelo', (req, res) => {
   const moto = req.query.moto || '';
+  const cor = req.query.cor || '';
   if (!moto) {
     return res.status(400).json({ erro: 'Informe o modelo (moto) para consultar a fila.' });
   }
-  const fila = filaDoModelo(moto);
-  res.json({ moto, total: fila.length, fila });
+  const fila = filaDoModelo(moto, cor);
+  res.json({ moto, cor, total: fila.length, fila });
 });
 
 app.post('/api/upload', exigirSessao, (req, res) => {

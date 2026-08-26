@@ -4,6 +4,7 @@ import { carregarFilaEspera, filaDoModelo, NOME_STORE } from '../../shared/plani
 export default async (req: Request) => {
   const url = new URL(req.url);
   const moto = url.searchParams.get('moto') || '';
+  const cor = url.searchParams.get('cor') || '';
 
   if (!moto) {
     return Response.json({ erro: 'Informe o modelo (moto) para consultar a fila.' }, { status: 400 });
@@ -11,9 +12,9 @@ export default async (req: Request) => {
 
   const store = getStore(NOME_STORE);
   const { filaEspera } = await carregarFilaEspera(store);
-  const fila = filaDoModelo(filaEspera, moto);
+  const fila = filaDoModelo(filaEspera, moto, cor);
 
-  return Response.json({ moto, total: fila.length, fila });
+  return Response.json({ moto, cor, total: fila.length, fila });
 };
 
 export const config = {

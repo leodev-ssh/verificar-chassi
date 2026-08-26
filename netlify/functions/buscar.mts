@@ -33,8 +33,8 @@ export default async (req: Request, context: Context) => {
     .sort((a: { venceIso: string | null }, b: { venceIso: string | null }) =>
       (b.venceIso || '').localeCompare(a.venceIso || '')
     )
-    .map((r: { moto: string }) => {
-      const fila = filaDoModelo(filaEspera, r.moto);
+    .map((r: { moto: string; cor: string }) => {
+      const fila = filaDoModelo(filaEspera, r.moto, r.cor);
       return { ...r, temFila: fila.length > 0, totalFila: fila.length };
     });
   return Response.json({ termo, total: resultados.length, resultados });

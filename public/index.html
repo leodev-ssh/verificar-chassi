@@ -468,25 +468,27 @@ function filaItemHtml(f) {
   `;
 }
 
-async function mostrarFilaModelo(moto) {
+async function mostrarFilaModelo(moto, cor) {
+  const rotulo = cor ? `${moto} — ${cor}` : moto;
   layoutEl.classList.add('com-fila');
-  painelFilaWrap.innerHTML = `<div class="painel-fila"><div class="fila-vazia">Carregando fila de ${moto}...</div></div>`;
+  painelFilaWrap.innerHTML = `<div class="painel-fila"><div class="fila-vazia">Carregando fila de ${rotulo}...</div></div>`;
   try {
-    const resp = await fetch('/api/fila-modelo?moto=' + encodeURIComponent(moto));
+    const url = '/api/fila-modelo?moto=' + encodeURIComponent(moto) + (cor ? '&cor=' + encodeURIComponent(cor) : '');
+    const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.total === 0) {
       painelFilaWrap.innerHTML = `
         <div class="painel-fila">
           <h2>Fila de espera</h2>
-          <div class="sub-fila">${moto}</div>
-          <div class="fila-vazia">Nenhum cliente na fila para este modelo.</div>
+          <div class="sub-fila">${rotulo}</div>
+          <div class="fila-vazia">Nenhum cliente na fila para este modelo/cor.</div>
         </div>`;
       return;
     }
     painelFilaWrap.innerHTML = `
       <div class="painel-fila">
         <h2>Fila de espera</h2>
-        <div class="sub-fila">${moto} — ${data.total} cliente${data.total > 1 ? 's' : ''} aguardando</div>
+        <div class="sub-fila">${rotulo} — ${data.total} cliente${data.total > 1 ? 's' : ''} aguardando</div>
         ${data.fila.map(filaItemHtml).join('')}
       </div>`;
   } catch (e) {
@@ -525,7 +527,7 @@ async function buscar() {
         ? `<span class="selo ${status}">${status === 'vencido' ? 'Vencido' : 'No prazo'}</span>`
         : '';
       const seloFila = r.temFila
-        ? `<span class="selo tem-fila" data-moto="${r.moto}">Tem fila (${r.totalFila})</span>`
+        ? `<span class="selo tem-fila" data-moto="${r.moto}" data-cor="${r.cor}">Tem fila (${r.totalFila})</span>`
         : `<span class="selo sem-fila">Sem fila</span>`;
       return `
       <div class="card${classeCard}">
@@ -539,13 +541,13 @@ async function buscar() {
     }).join('');
 
     resultadosEl.querySelectorAll('.selo.tem-fila').forEach((el) => {
-      el.addEventListener('click', () => mostrarFilaModelo(el.dataset.moto));
+      el.addEventListener('click', () => mostrarFilaModelo(el.dataset.moto, el.dataset.cor));
     });
 
     // Mostra automaticamente a fila do primeiro resultado com fila
     const primeiroComFila = data.resultados.find((r) => r.temFila);
     if (primeiroComFila) {
-      mostrarFilaModelo(primeiroComFila.moto);
+      mostrarFilaModelo(primeiroComFila.moto, primeiroComFila.cor);
     }
   } catch (e) {
     msgEl.innerHTML = `<div class="msg err">Erro ao buscar: ${e.message}</div>`;

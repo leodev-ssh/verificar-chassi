@@ -224,6 +224,10 @@ function relatorioGuerrero(envioIso) {
         chassi: r.chassi,
         vendedorDistribuicao: r.vendedor,
         clienteDistribuicao: r.cliente,
+        envio: r.envio,
+        vence: r.vence,
+        venceIso: r.venceIso,
+        devolvida: r.devolvida,
         faturado: Boolean(faturado),
         vendedorFaturamento: faturado ? faturado.vendedor : '',
         clienteFaturamento: faturado ? faturado.cliente : '',
@@ -341,10 +345,27 @@ function carregarPlanilha(caminhoArquivo) {
     novosRegistros.push(registro);
   }
 
-  registros = novosRegistros;
+  registros = marcarDevolvidas(novosRegistros);
   ultimaAtualizacao = new Date();
   ultimoErro = null;
   console.log(`[base] Carregados ${registros.length} registros de ${caminhoArquivo}`);
+}
+
+// Quando o mesmo chassi aparece mais de uma vez (redistribuição para outro
+// cliente), toda ocorrência que NÃO é a mais recente (por ENVIO) já deixou
+// de ser daquele cliente — mesmo sem ter vencido, foi devolvida/repassada.
+function marcarDevolvidas(lista) {
+  const maisRecentePorChassi = new Map();
+  for (const r of lista) {
+    const atual = maisRecentePorChassi.get(r.chassi);
+    if (!atual || (r.envioIso || '') > (atual.envioIso || '')) {
+      maisRecentePorChassi.set(r.chassi, r);
+    }
+  }
+  return lista.map((r) => ({
+    ...r,
+    devolvida: maisRecentePorChassi.get(r.chassi) !== r,
+  }));
 }
 
 function carregarInicial() {

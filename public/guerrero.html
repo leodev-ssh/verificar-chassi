@@ -15,6 +15,7 @@
     --accent-dark: #2563eb;
     --ok: #22c55e;
     --err: #ef4444;
+    --warn: #eab308;
   }
   * { box-sizing: border-box; }
   body {
@@ -94,8 +95,14 @@
   }
   .selo.faturado { background: rgba(34,197,94,0.18); color: #4ade80; }
   .selo.pendente { background: rgba(239,68,68,0.18); color: #f87171; }
+  .selo.vencido { background: rgba(239,68,68,0.18); color: #f87171; }
+  .selo.disponivel { background: rgba(34,197,94,0.18); color: #4ade80; }
+  .selo.devolvida { background: rgba(234,179,8,0.18); color: #facc15; }
   .empty { text-align: center; color: var(--muted); padding: 40px 0; font-size: 14px; }
   .chassi-cel { color: var(--accent); font-weight: 600; letter-spacing: 0.5px; }
+  tr.linha-vencido td { background: rgba(239, 68, 68, 0.06); }
+  tr.linha-disponivel td { background: rgba(34, 197, 94, 0.06); }
+  tr.linha-devolvida td { background: rgba(234, 179, 8, 0.06); }
 </style>
 </head>
 <body>
@@ -124,6 +131,18 @@ const tabelaWrap = document.getElementById('tabelaWrap');
 function fmtDiaLabel(iso) {
   const [ano, mes, dia] = iso.split('-');
   return `${dia}/${mes}/${ano}`;
+}
+
+// Mesma regra da busca principal: devolvida tem prioridade (mesmo dentro do
+// prazo, já foi repassada); senão compara VENCE com hoje.
+function statusVencimento(venceIso, devolvida) {
+  if (devolvida) return 'devolvida';
+  if (!venceIso) return null;
+  const hoje = new Date();
+  const hojeIso = hoje.getFullYear() + '-' +
+    String(hoje.getMonth() + 1).padStart(2, '0') + '-' +
+    String(hoje.getDate()).padStart(2, '0');
+  return venceIso < hojeIso ? 'vencido' : 'disponivel';
 }
 
 async function carregarDias() {
@@ -166,6 +185,8 @@ async function carregarDia(dia) {
       </div>
     `;
 
+    const rotulosStatus = { vencido: 'Vencido', disponivel: 'Disponível', devolvida: 'Devolvida' };
+
     tabelaWrap.innerHTML = `
       <div class="table-wrap">
         <table>
@@ -175,25 +196,36 @@ async function carregarDia(dia) {
               <th>Chassi</th>
               <th>Vendedor (distribuição)</th>
               <th>Cliente (distribuição)</th>
-              <th>Status</th>
+              <th>Envio</th>
+              <th>Vencimento</th>
+              <th>Situação</th>
+              <th>Faturamento</th>
               <th>Vendedor (faturamento)</th>
               <th>Cliente (faturamento)</th>
               <th>Data venda</th>
             </tr>
           </thead>
           <tbody>
-            ${data.itens.map((item) => `
-              <tr>
+            ${data.itens.map((item) => {
+              const status = statusVencimento(item.venceIso, item.devolvida);
+              const classeLinha = status ? ` linha-${status}` : '';
+              const seloStatus = status ? `<span class="selo ${status}">${rotulosStatus[status]}</span>` : '—';
+              return `
+              <tr class="${classeLinha}">
                 <td>${item.moto || '—'}</td>
                 <td class="chassi-cel">${item.chassi}</td>
                 <td>${item.vendedorDistribuicao || '—'}</td>
                 <td>${item.clienteDistribuicao || '—'}</td>
+                <td>${item.envio || '—'}</td>
+                <td>${item.vence || '—'}</td>
+                <td>${seloStatus}</td>
                 <td>${item.faturado ? '<span class="selo faturado">Faturado</span>' : '<span class="selo pendente">Não faturado</span>'}</td>
                 <td>${item.vendedorFaturamento || '—'}</td>
                 <td>${item.clienteFaturamento || '—'}</td>
                 <td>${item.dataVenda || '—'}</td>
               </tr>
-            `).join('')}
+            `;
+            }).join('')}
           </tbody>
         </table>
       </div>

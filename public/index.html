@@ -15,6 +15,7 @@
     --accent-dark: #2563eb;
     --ok: #22c55e;
     --err: #ef4444;
+    --warn: #eab308;
   }
   * { box-sizing: border-box; }
   body {
@@ -133,9 +134,13 @@
     border-left-color: var(--err);
     background: rgba(239, 68, 68, 0.08);
   }
-  .card.no-prazo {
+  .card.disponivel {
     border-left-color: var(--ok);
     background: rgba(34, 197, 94, 0.08);
+  }
+  .card.devolvida {
+    border-left-color: var(--warn);
+    background: rgba(234, 179, 8, 0.08);
   }
   .card .topo {
     display: flex;
@@ -160,7 +165,8 @@
     white-space: nowrap;
   }
   .selo.vencido { background: rgba(239,68,68,0.18); color: #f87171; }
-  .selo.no-prazo { background: rgba(34,197,94,0.18); color: #4ade80; }
+  .selo.disponivel { background: rgba(34,197,94,0.18); color: #4ade80; }
+  .selo.devolvida { background: rgba(234,179,8,0.18); color: #facc15; }
   .selos {
     display: flex;
     gap: 8px;
@@ -450,14 +456,17 @@ function fieldsHtml(r) {
   `).join('');
 }
 
-// Compara a data de vencimento (YYYY-MM-DD) com hoje, no fuso local
-function statusVencimento(venceIso) {
+// Compara a data de vencimento (YYYY-MM-DD) com hoje, no fuso local.
+// Devolvida tem prioridade: mesmo dentro do prazo, já não é mais do cliente
+// original (foi repassada para outro na fila antes de vencer).
+function statusVencimento(venceIso, devolvida) {
+  if (devolvida) return 'devolvida';
   if (!venceIso) return null;
   const hoje = new Date();
   const hojeIso = hoje.getFullYear() + '-' +
     String(hoje.getMonth() + 1).padStart(2, '0') + '-' +
     String(hoje.getDate()).padStart(2, '0');
-  return venceIso < hojeIso ? 'vencido' : 'no-prazo';
+  return venceIso < hojeIso ? 'vencido' : 'disponivel';
 }
 
 function filaItemHtml(f) {
@@ -524,10 +533,11 @@ async function buscar() {
       return;
     }
     resultadosEl.innerHTML = data.resultados.map(r => {
-      const status = statusVencimento(r.venceIso);
+      const status = statusVencimento(r.venceIso, r.devolvida);
       const classeCard = status ? ` ${status}` : '';
+      const rotulosStatus = { vencido: 'Vencido', disponivel: 'Disponível', devolvida: 'Devolvida' };
       const seloVenc = status
-        ? `<span class="selo ${status}">${status === 'vencido' ? 'Vencido' : 'No prazo'}</span>`
+        ? `<span class="selo ${status}">${rotulosStatus[status]}</span>`
         : '';
       const seloFila = r.temFila
         ? `<span class="selo tem-fila" data-moto="${r.moto}" data-cor="${r.cor}">Tem fila (${r.totalFila})</span>`

@@ -332,28 +332,41 @@ export function diasDeEnvioDisponiveis(registrosChassi) {
   return Array.from(dias).sort((a, b) => b.localeCompare(a));
 }
 
+function itemGuerrero(r, faturamentoPorChassi) {
+  const faturado = faturamentoPorChassi.get(r.chassi);
+  return {
+    moto: r.moto,
+    chassi: r.chassi,
+    vendedorDistribuicao: r.vendedor,
+    clienteDistribuicao: r.cliente,
+    envio: r.envio,
+    envioIso: r.envioIso,
+    vence: r.vence,
+    venceIso: r.venceIso,
+    devolvida: r.devolvida,
+    faturado: Boolean(faturado),
+    vendedorFaturamento: faturado ? faturado.vendedor : '',
+    clienteFaturamento: faturado ? faturado.cliente : '',
+    dataVenda: faturado ? faturado.dataVenda : '',
+  };
+}
+
 // Relatório "Guerrero": chassis distribuídos num dia, cruzados com faturamento
 export function relatorioGuerrero(registrosChassi, registrosFaturamento, envioIso) {
   const faturamentoPorChassi = new Map(registrosFaturamento.map((f) => [f.chassi, f]));
   return registrosChassi
     .filter((r) => r.envioIso === envioIso)
-    .map((r) => {
-      const faturado = faturamentoPorChassi.get(r.chassi);
-      return {
-        moto: r.moto,
-        chassi: r.chassi,
-        vendedorDistribuicao: r.vendedor,
-        clienteDistribuicao: r.cliente,
-        envio: r.envio,
-        vence: r.vence,
-        venceIso: r.venceIso,
-        devolvida: r.devolvida,
-        faturado: Boolean(faturado),
-        vendedorFaturamento: faturado ? faturado.vendedor : '',
-        clienteFaturamento: faturado ? faturado.cliente : '',
-        dataVenda: faturado ? faturado.dataVenda : '',
-      };
-    });
+    .map((r) => itemGuerrero(r, faturamentoPorChassi));
+}
+
+// Busca por sufixo do chassi em toda a base (qualquer dia), para achar um
+// chassi específico sem precisar saber em qual dia ele foi distribuído.
+export function buscarGuerreroPorChassi(registrosChassi, registrosFaturamento, termo) {
+  const faturamentoPorChassi = new Map(registrosFaturamento.map((f) => [f.chassi, f]));
+  return registrosChassi
+    .filter((r) => r.chassi.endsWith(termo))
+    .sort((a, b) => (b.envioIso || '').localeCompare(a.envioIso || ''))
+    .map((r) => itemGuerrero(r, faturamentoPorChassi));
 }
 
 export { NOME_STORE, CHAVE_REGISTROS, CHAVE_FILA_ESPERA, CHAVE_FATURAMENTO };

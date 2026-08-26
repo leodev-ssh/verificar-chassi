@@ -213,27 +213,37 @@ function diasDeEnvioDisponiveis() {
   return Array.from(dias).sort((a, b) => b.localeCompare(a));
 }
 
+function itemGuerrero(r) {
+  const faturado = faturamentoPorChassi.get(r.chassi);
+  return {
+    moto: r.moto,
+    chassi: r.chassi,
+    vendedorDistribuicao: r.vendedor,
+    clienteDistribuicao: r.cliente,
+    envio: r.envio,
+    envioIso: r.envioIso,
+    vence: r.vence,
+    venceIso: r.venceIso,
+    devolvida: r.devolvida,
+    faturado: Boolean(faturado),
+    vendedorFaturamento: faturado ? faturado.vendedor : '',
+    clienteFaturamento: faturado ? faturado.cliente : '',
+    dataVenda: faturado ? faturado.dataVenda : '',
+  };
+}
+
 // Relatório "Guerrero": chassis distribuídos num dia, cruzados com faturamento
 function relatorioGuerrero(envioIso) {
+  return registros.filter((r) => r.envioIso === envioIso).map(itemGuerrero);
+}
+
+// Busca por sufixo do chassi em toda a base (qualquer dia), para achar um
+// chassi específico sem precisar saber em qual dia ele foi distribuído.
+function buscarGuerreroPorChassi(termo) {
   return registros
-    .filter((r) => r.envioIso === envioIso)
-    .map((r) => {
-      const faturado = faturamentoPorChassi.get(r.chassi);
-      return {
-        moto: r.moto,
-        chassi: r.chassi,
-        vendedorDistribuicao: r.vendedor,
-        clienteDistribuicao: r.cliente,
-        envio: r.envio,
-        vence: r.vence,
-        venceIso: r.venceIso,
-        devolvida: r.devolvida,
-        faturado: Boolean(faturado),
-        vendedorFaturamento: faturado ? faturado.vendedor : '',
-        clienteFaturamento: faturado ? faturado.cliente : '',
-        dataVenda: faturado ? faturado.dataVenda : '',
-      };
-    });
+    .filter((r) => r.chassi.endsWith(termo))
+    .sort((a, b) => (b.envioIso || '').localeCompare(a.envioIso || ''))
+    .map(itemGuerrero);
 }
 
 // Associa o MOTO do chassi (nome técnico/completo) ao MODELO da fila de
@@ -660,6 +670,15 @@ app.get('/api/guerrero', (req, res) => {
   }
   const itens = relatorioGuerrero(dia);
   res.json({ dia, total: itens.length, itens });
+});
+
+app.get('/api/guerrero-buscar', (req, res) => {
+  const termo = limparUpper(req.query.q || '');
+  if (!termo) {
+    return res.status(400).json({ erro: 'Informe o chassi ou parte dele.' });
+  }
+  const itens = buscarGuerreroPorChassi(termo);
+  res.json({ termo, total: itens.length, itens });
 });
 
 app.post('/api/admin-login', (req, res) => {

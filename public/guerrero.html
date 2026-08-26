@@ -26,9 +26,9 @@
     min-height: 100vh;
   }
   .wrap {
-    max-width: 1100px;
+    max-width: 1600px;
     margin: 0 auto;
-    padding: 32px 20px 60px;
+    padding: 24px 16px 60px;
   }
   h1 { font-size: 22px; margin: 0 0 4px; }
   .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
@@ -51,7 +51,7 @@
     margin-bottom: 20px;
     flex-wrap: wrap;
   }
-  select {
+  select, input[type="text"] {
     background: var(--panel);
     border: 1px solid var(--border);
     color: var(--text);
@@ -60,7 +60,11 @@
     border-radius: 8px;
     outline: none;
   }
-  select:focus { border-color: var(--accent); }
+  select:focus, input[type="text"]:focus { border-color: var(--accent); }
+  input[type="text"] {
+    flex: 1;
+    min-width: 220px;
+  }
 
   .resumo-dia {
     display: flex;
@@ -74,9 +78,15 @@
   .resumo-dia .num.ok { color: #4ade80; }
   .resumo-dia .num.pend { color: #f87171; }
 
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
-  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; white-space: nowrap; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+  th, td {
+    text-align: left;
+    padding: 8px 8px;
+    border-bottom: 1px solid var(--border);
+    overflow-wrap: break-word;
+    vertical-align: top;
+  }
+  th { color: var(--muted); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; }
   tr:hover td { background: rgba(255,255,255,0.02); }
   .table-wrap {
     background: var(--panel);
@@ -85,11 +95,12 @@
     overflow-x: auto;
   }
   .selo {
-    font-size: 11px;
+    display: inline-block;
+    font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    padding: 3px 10px;
+    letter-spacing: 0.3px;
+    padding: 2px 7px;
     border-radius: 999px;
     white-space: nowrap;
   }
@@ -99,7 +110,7 @@
   .selo.disponivel { background: rgba(34,197,94,0.18); color: #4ade80; }
   .selo.devolvida { background: rgba(234,179,8,0.18); color: #facc15; }
   .empty { text-align: center; color: var(--muted); padding: 40px 0; font-size: 14px; }
-  .chassi-cel { color: var(--accent); font-weight: 600; letter-spacing: 0.5px; }
+  .chassi-cel { color: var(--accent); font-weight: 600; font-size: 11px; word-break: break-all; }
   tr.linha-vencido td { background: rgba(239, 68, 68, 0.06); }
   tr.linha-disponivel td { background: rgba(34, 197, 94, 0.06); }
   tr.linha-devolvida td { background: rgba(234, 179, 8, 0.06); }
@@ -117,6 +128,7 @@
 
     <div class="seletor-row">
       <select id="seletorDia"><option value="">Carregando dias...</option></select>
+      <input type="text" id="filtroTexto" placeholder="Filtrar por modelo ou chassi..." />
     </div>
 
     <div id="resumoDiaWrap"></div>
@@ -125,8 +137,11 @@
 
 <script>
 const seletorDia = document.getElementById('seletorDia');
+const filtroTexto = document.getElementById('filtroTexto');
 const resumoDiaWrap = document.getElementById('resumoDiaWrap');
 const tabelaWrap = document.getElementById('tabelaWrap');
+
+let itensDoDia = [];
 
 function fmtDiaLabel(iso) {
   const [ano, mes, dia] = iso.split('-');
@@ -160,9 +175,126 @@ async function carregarDias() {
   }
 }
 
+function itensFiltrados() {
+  const termo = filtroTexto.value.trim().toUpperCase();
+  if (!termo) return itensDoDia;
+  return itensDoDia.filter((item) =>
+    (item.moto || '').toUpperCase().includes(termo) ||
+    (item.chassi || '').toUpperCase().includes(termo)
+  );
+}
+
+// Um chassi digitado (parte dele) não tem espaço e costuma ter 4+ caracteres
+// alfanuméricos; nome de modelo geralmente tem espaço ou é uma palavra comum.
+// Só decide buscar globalmente quando parece mesmo um pedaço de chassi.
+function pareceChassi(termo) {
+  return /^[A-Z0-9]{4,}$/.test(termo);
+}
+
+function tabelaHtml(itens) {
+  const rotulosStatus = { vencido: 'Vencido', disponivel: 'Disponível', devolvida: 'Devolvida' };
+  return `
+    <div class="table-wrap">
+      <table>
+        <colgroup>
+          <col style="width:9%">
+          <col style="width:11%">
+          <col style="width:11%">
+          <col style="width:12%">
+          <col style="width:6%">
+          <col style="width:6%">
+          <col style="width:8%">
+          <col style="width:8%">
+          <col style="width:11%">
+          <col style="width:12%">
+          <col style="width:6%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Modelo</th>
+            <th>Chassi</th>
+            <th>Vendedor (distribuição)</th>
+            <th>Cliente (distribuição)</th>
+            <th>Envio</th>
+            <th>Vencimento</th>
+            <th>Situação</th>
+            <th>Faturamento</th>
+            <th>Vendedor (faturamento)</th>
+            <th>Cliente (faturamento)</th>
+            <th>Data venda</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itens.map((item) => {
+            const status = statusVencimento(item.venceIso, item.devolvida);
+            const classeLinha = status ? ` linha-${status}` : '';
+            const seloStatus = status ? `<span class="selo ${status}">${rotulosStatus[status]}</span>` : '—';
+            return `
+            <tr class="${classeLinha}">
+              <td>${item.moto || '—'}</td>
+              <td class="chassi-cel">${item.chassi}</td>
+              <td>${item.vendedorDistribuicao || '—'}</td>
+              <td>${item.clienteDistribuicao || '—'}</td>
+              <td>${item.envio || '—'}</td>
+              <td>${item.vence || '—'}</td>
+              <td>${seloStatus}</td>
+              <td>${item.faturado ? '<span class="selo faturado">Faturado</span>' : '<span class="selo pendente">Não faturado</span>'}</td>
+              <td>${item.vendedorFaturamento || '—'}</td>
+              <td>${item.clienteFaturamento || '—'}</td>
+              <td>${item.dataVenda || '—'}</td>
+            </tr>
+          `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function renderTabela() {
+  const termo = filtroTexto.value.trim().toUpperCase();
+
+  if (termo && pareceChassi(termo)) {
+    tabelaWrap.innerHTML = '<div class="empty">Buscando chassi em todos os dias...</div>';
+    try {
+      const resp = await fetch('/api/guerrero-buscar?q=' + encodeURIComponent(termo));
+      const data = await resp.json();
+      if (!resp.ok) {
+        tabelaWrap.innerHTML = `<div class="empty">${data.erro || 'Erro ao buscar.'}</div>`;
+        return;
+      }
+      if (data.total === 0) {
+        tabelaWrap.innerHTML = '<div class="empty">Nenhum chassi encontrado com esse termo, em nenhum dia.</div>';
+        return;
+      }
+      resumoDiaWrap.innerHTML = `
+        <div class="resumo-dia">
+          <div class="item">Resultado da busca global: <span class="num">${data.total}</span> chassi(s), em qualquer dia</div>
+        </div>
+      `;
+      tabelaWrap.innerHTML = tabelaHtml(data.itens);
+    } catch (e) {
+      tabelaWrap.innerHTML = `<div class="empty">Erro ao buscar: ${e.message}</div>`;
+    }
+    return;
+  }
+
+  const itens = itensFiltrados();
+  if (itensDoDia.length === 0) {
+    tabelaWrap.innerHTML = '<div class="empty">Nenhuma distribuição neste dia.</div>';
+    return;
+  }
+  if (itens.length === 0) {
+    tabelaWrap.innerHTML = '<div class="empty">Nenhum resultado para esse filtro.</div>';
+    return;
+  }
+  tabelaWrap.innerHTML = tabelaHtml(itens);
+}
+
 async function carregarDia(dia) {
   tabelaWrap.innerHTML = '<div class="empty">Carregando...</div>';
   resumoDiaWrap.innerHTML = '';
+  itensDoDia = [];
   try {
     const resp = await fetch('/api/guerrero?dia=' + encodeURIComponent(dia));
     const data = await resp.json();
@@ -170,6 +302,8 @@ async function carregarDia(dia) {
       tabelaWrap.innerHTML = `<div class="empty">${data.erro || 'Erro ao carregar.'}</div>`;
       return;
     }
+    itensDoDia = data.itens;
+
     if (data.total === 0) {
       tabelaWrap.innerHTML = '<div class="empty">Nenhuma distribuição neste dia.</div>';
       return;
@@ -185,57 +319,14 @@ async function carregarDia(dia) {
       </div>
     `;
 
-    const rotulosStatus = { vencido: 'Vencido', disponivel: 'Disponível', devolvida: 'Devolvida' };
-
-    tabelaWrap.innerHTML = `
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Modelo</th>
-              <th>Chassi</th>
-              <th>Vendedor (distribuição)</th>
-              <th>Cliente (distribuição)</th>
-              <th>Envio</th>
-              <th>Vencimento</th>
-              <th>Situação</th>
-              <th>Faturamento</th>
-              <th>Vendedor (faturamento)</th>
-              <th>Cliente (faturamento)</th>
-              <th>Data venda</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${data.itens.map((item) => {
-              const status = statusVencimento(item.venceIso, item.devolvida);
-              const classeLinha = status ? ` linha-${status}` : '';
-              const seloStatus = status ? `<span class="selo ${status}">${rotulosStatus[status]}</span>` : '—';
-              return `
-              <tr class="${classeLinha}">
-                <td>${item.moto || '—'}</td>
-                <td class="chassi-cel">${item.chassi}</td>
-                <td>${item.vendedorDistribuicao || '—'}</td>
-                <td>${item.clienteDistribuicao || '—'}</td>
-                <td>${item.envio || '—'}</td>
-                <td>${item.vence || '—'}</td>
-                <td>${seloStatus}</td>
-                <td>${item.faturado ? '<span class="selo faturado">Faturado</span>' : '<span class="selo pendente">Não faturado</span>'}</td>
-                <td>${item.vendedorFaturamento || '—'}</td>
-                <td>${item.clienteFaturamento || '—'}</td>
-                <td>${item.dataVenda || '—'}</td>
-              </tr>
-            `;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-    `;
+    renderTabela();
   } catch (e) {
     tabelaWrap.innerHTML = `<div class="empty">Erro ao carregar: ${e.message}</div>`;
   }
 }
 
 seletorDia.addEventListener('change', () => carregarDia(seletorDia.value));
+filtroTexto.addEventListener('input', renderTabela);
 
 carregarDias();
 </script>

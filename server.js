@@ -11,8 +11,12 @@ const PORT = process.env.PORT || 3300;
 const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'fila_completa.xlsx');
 const FILA_ESPERA_FILE = path.join(DATA_DIR, 'lista_de_espera.xlsx');
+const FATURAMENTO_FILE = path.join(DATA_DIR, 'faturamento.xlsx');
 const IPS_BLOQUEADOS_FILE = path.join(DATA_DIR, 'ips_bloqueados.json');
 const LOG_ACESSOS_FILE = path.join(DATA_DIR, 'log_acessos.json');
+const NOMES_IPS_FILE = path.join(DATA_DIR, 'nomes_ips.json');
+const WHITELIST_FILE = path.join(DATA_DIR, 'whitelist_ips.json');
+const WHITELIST_ATIVA_FILE = path.join(DATA_DIR, 'whitelist_ativa.json');
 const MAX_LOG_ACESSOS = 500;
 const NOME_COOKIE_SESSAO = 'vc_admin';
 const DURACAO_SESSAO_MS = 12 * 60 * 60 * 1000; // 12 horas
@@ -154,6 +158,80 @@ function carregarFilaEsperaInicial() {
   }
 }
 
+// --- Faturamento (base de vendas, cruzada por chassi com a distribuição) ---
+let faturamentoPorChassi = new Map();
+let faturamentoAtualizadoEm = null;
+let faturamentoErro = null;
+
+function normalizarLinhaFaturamento(linha) {
+  const chassi = limparUpper(linha['Chassi']);
+  if (!chassi) return null;
+  return {
+    chassi,
+    cliente: limpar(linha['Cliente']),
+    vendedor: limpar(linha['Vendedor']),
+    // "Data Venda" vem como DD/MM/YYYY, diferente do M/D/YY da distribuição
+    dataVenda: isoParaBr(paraIsoDiaMesAno(linha['Data Venda'])),
+  };
+}
+
+function carregarFaturamento(caminhoArquivo) {
+  const workbook = XLSX.readFile(caminhoArquivo);
+  const aba = workbook.Sheets[workbook.SheetNames[0]];
+  const linhas = XLSX.utils.sheet_to_json(aba, { defval: '', raw: false });
+
+  const mapa = new Map();
+  for (const linha of linhas) {
+    // A última linha do export é um rodapé de totais, sem chassi real
+    const registro = normalizarLinhaFaturamento(linha);
+    if (!registro) continue;
+    mapa.set(registro.chassi, registro);
+  }
+
+  faturamentoPorChassi = mapa;
+  faturamentoAtualizadoEm = new Date();
+  faturamentoErro = null;
+  console.log(`[faturamento] Carregados ${faturamentoPorChassi.size} registros de ${caminhoArquivo}`);
+}
+
+function carregarFaturamentoInicial() {
+  try {
+    if (fs.existsSync(FATURAMENTO_FILE)) {
+      carregarFaturamento(FATURAMENTO_FILE);
+    } else {
+      console.log('[faturamento] Nenhuma planilha encontrada em data/. Aguardando upload.');
+    }
+  } catch (err) {
+    faturamentoErro = err.message;
+    console.error('[faturamento] Erro ao carregar planilha inicial:', err.message);
+  }
+}
+
+// Datas de ENVIO (YYYY-MM-DD) distintas na base de distribuição, mais recentes primeiro
+function diasDeEnvioDisponiveis() {
+  const dias = new Set(registros.map((r) => r.envioIso).filter(Boolean));
+  return Array.from(dias).sort((a, b) => b.localeCompare(a));
+}
+
+// Relatório "Guerrero": chassis distribuídos num dia, cruzados com faturamento
+function relatorioGuerrero(envioIso) {
+  return registros
+    .filter((r) => r.envioIso === envioIso)
+    .map((r) => {
+      const faturado = faturamentoPorChassi.get(r.chassi);
+      return {
+        moto: r.moto,
+        chassi: r.chassi,
+        vendedorDistribuicao: r.vendedor,
+        clienteDistribuicao: r.cliente,
+        faturado: Boolean(faturado),
+        vendedorFaturamento: faturado ? faturado.vendedor : '',
+        clienteFaturamento: faturado ? faturado.cliente : '',
+        dataVenda: faturado ? faturado.dataVenda : '',
+      };
+    });
+}
+
 // Associa o MOTO do chassi (nome técnico/completo) ao MODELO da fila de
 // espera (nome comercial/curto). Os vocabulários das duas planilhas são
 // diferentes (ex.: "CG160 TITAN" no chassi vs "TITAN" na fila), então o
@@ -235,6 +313,7 @@ function normalizarLinha(linha) {
     status: limpar(linha['Coluna1'] ?? linha['MODALIDADE']),
     cod: limpar(linha['CÓD.']),
     envio: formatarData(linha['ENVIO']),
+    envioIso: paraIso(linha['ENVIO']),
     vence: formatarData(linha['VENCE']),
     venceIso: paraIso(linha['VENCE']),
   };
@@ -352,13 +431,48 @@ function registrarAcesso(ip) {
   }
 }
 
-function resumoIps(log) {
+function resumoIps(log, nomesIps) {
   const porIp = new Map();
   for (const item of log) {
-    if (!porIp.has(item.ip)) porIp.set(item.ip, { ip: item.ip, total: 0, ultimoAcesso: item.em });
+    if (!porIp.has(item.ip)) {
+      porIp.set(item.ip, { ip: item.ip, nome: nomesIps[item.ip] || '', total: 0, ultimoAcesso: item.em });
+    }
     porIp.get(item.ip).total += 1;
   }
   return Array.from(porIp.values()).sort((a, b) => b.ultimoAcesso.localeCompare(a.ultimoAcesso));
+}
+
+function carregarNomesIps() {
+  const mapa = lerJsonSeguro(NOMES_IPS_FILE, {});
+  return mapa && typeof mapa === 'object' ? mapa : {};
+}
+
+function salvarNomeIp(ip, nome) {
+  const mapa = carregarNomesIps();
+  if (nome) {
+    mapa[ip] = nome;
+  } else {
+    delete mapa[ip];
+  }
+  fs.writeFileSync(NOMES_IPS_FILE, JSON.stringify(mapa));
+  return mapa;
+}
+
+function carregarWhitelist() {
+  const lista = lerJsonSeguro(WHITELIST_FILE, []);
+  return Array.isArray(lista) ? lista : [];
+}
+
+function salvarWhitelist(lista) {
+  fs.writeFileSync(WHITELIST_FILE, JSON.stringify(lista));
+}
+
+function whitelistEstaAtiva() {
+  return lerJsonSeguro(WHITELIST_ATIVA_FILE, false) === true;
+}
+
+function definirWhitelistAtiva(ativa) {
+  fs.writeFileSync(WHITELIST_ATIVA_FILE, JSON.stringify(Boolean(ativa)));
 }
 
 function ipDoRequest(req) {
@@ -370,6 +484,7 @@ function ipDoRequest(req) {
 
 carregarInicial();
 carregarFilaEsperaInicial();
+carregarFaturamentoInicial();
 
 // --- App ---
 const app = express();
@@ -385,6 +500,9 @@ app.get('/api/status', (req, res) => {
     totalFilaEspera: filaEspera.length,
     filaEsperaAtualizadaEm,
     filaEsperaErro,
+    totalFaturamento: faturamentoPorChassi.size,
+    faturamentoAtualizadoEm,
+    faturamentoErro,
   });
 });
 
@@ -417,6 +535,9 @@ app.get('/api/buscar', (req, res) => {
   const ip = ipDoRequest(req);
   if (ip && carregarIpsBloqueados().includes(ip)) {
     return res.status(403).json({ erro: 'Acesso bloqueado.' });
+  }
+  if (whitelistEstaAtiva() && !(ip && carregarWhitelist().includes(ip))) {
+    return res.status(403).json({ erro: 'Acesso restrito. Fale com o administrador para liberar este acesso.' });
   }
   registrarAcesso(ip);
 
@@ -488,6 +609,38 @@ app.post('/api/upload-fila', exigirSessao, (req, res) => {
   });
 });
 
+app.post('/api/upload-faturamento', exigirSessao, (req, res) => {
+  upload.single('planilha')(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ erro: err.message });
+    }
+    if (!req.file) {
+      return res.status(400).json({ erro: 'Nenhum arquivo enviado.' });
+    }
+    try {
+      fs.writeFileSync(FATURAMENTO_FILE, req.file.buffer);
+      carregarFaturamento(FATURAMENTO_FILE);
+      res.json({ ok: true, totalFaturamento: faturamentoPorChassi.size, faturamentoAtualizadoEm });
+    } catch (e) {
+      faturamentoErro = e.message;
+      res.status(400).json({ erro: 'Não foi possível processar a planilha de faturamento: ' + e.message });
+    }
+  });
+});
+
+app.get('/api/guerrero-dias', (req, res) => {
+  res.json({ dias: diasDeEnvioDisponiveis() });
+});
+
+app.get('/api/guerrero', (req, res) => {
+  const dia = req.query.dia || '';
+  if (!dia) {
+    return res.status(400).json({ erro: 'Informe o dia (formato YYYY-MM-DD).' });
+  }
+  const itens = relatorioGuerrero(dia);
+  res.json({ dia, total: itens.length, itens });
+});
+
 app.post('/api/admin-login', (req, res) => {
   const { senha } = req.body || {};
   if (!senhaCorreta(senha)) {
@@ -513,8 +666,12 @@ app.get('/api/admin-dados', exigirSessao, (req, res) => {
     ultimaAtualizacao,
     totalFilaEspera: filaEspera.length,
     filaEsperaAtualizadaEm,
+    totalFaturamento: faturamentoPorChassi.size,
+    faturamentoAtualizadoEm,
     ipsBloqueados: carregarIpsBloqueados(),
-    ips: resumoIps(log),
+    ips: resumoIps(log, carregarNomesIps()),
+    whitelist: carregarWhitelist(),
+    whitelistAtiva: whitelistEstaAtiva(),
   });
 });
 
@@ -528,6 +685,32 @@ app.post('/api/admin-bloquear-ip', exigirSessao, (req, res) => {
     acao === 'desbloquear' ? atual.filter((item) => item !== ip) : Array.from(new Set([...atual, ip]));
   salvarIpsBloqueados(novaLista);
   res.json({ ok: true, ipsBloqueados: novaLista });
+});
+
+app.post('/api/admin-nomear-ip', exigirSessao, (req, res) => {
+  const { ip, nome } = req.body || {};
+  if (!ip) {
+    return res.status(400).json({ erro: 'Informe o IP.' });
+  }
+  const nomesIps = salvarNomeIp(ip, (nome || '').trim());
+  res.json({ ok: true, nomesIps });
+});
+
+app.post('/api/admin-whitelist', exigirSessao, (req, res) => {
+  const { ip, acao } = req.body || {};
+
+  if (acao === 'ativar' || acao === 'desativar') {
+    definirWhitelistAtiva(acao === 'ativar');
+    return res.json({ ok: true, whitelistAtiva: whitelistEstaAtiva() });
+  }
+
+  if (!ip) {
+    return res.status(400).json({ erro: 'Informe o IP.' });
+  }
+  const atual = carregarWhitelist();
+  const novaLista = acao === 'remover' ? atual.filter((item) => item !== ip) : Array.from(new Set([...atual, ip]));
+  salvarWhitelist(novaLista);
+  res.json({ ok: true, whitelist: novaLista });
 });
 
 app.listen(PORT, () => {

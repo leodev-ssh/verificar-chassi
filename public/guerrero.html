@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Guerrero — Distribuídas x Faturadas</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #2a2e38;
+    --text: #e8eaed;
+    --muted: #9aa1ac;
+    --accent: #3b82f6;
+    --accent-dark: #2563eb;
+    --ok: #22c55e;
+    --err: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  .wrap {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 20px 60px;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  a.voltar { color: var(--accent); font-size: 13px; text-decoration: none; }
+  a.voltar:hover { text-decoration: underline; }
+
+  .header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+
+  .seletor-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  select {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 14px;
+    font-size: 14px;
+    border-radius: 8px;
+    outline: none;
+  }
+  select:focus { border-color: var(--accent); }
+
+  .resumo-dia {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    font-size: 13px;
+  }
+  .resumo-dia .item { color: var(--muted); }
+  .resumo-dia .num { color: var(--text); font-weight: 700; }
+  .resumo-dia .num.ok { color: #4ade80; }
+  .resumo-dia .num.pend { color: #f87171; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; white-space: nowrap; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .table-wrap {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow-x: auto;
+  }
+  .selo {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .selo.faturado { background: rgba(34,197,94,0.18); color: #4ade80; }
+  .selo.pendente { background: rgba(239,68,68,0.18); color: #f87171; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 0; font-size: 14px; }
+  .chassi-cel { color: var(--accent); font-weight: 600; letter-spacing: 0.5px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header-row">
+      <div>
+        <h1>Guerrero — Distribuídas x Faturadas</h1>
+        <div class="sub">Escolha um dia de distribuição para ver o que já foi faturado e o que ainda falta.</div>
+      </div>
+      <a class="voltar" href="/">← Voltar à busca</a>
+    </div>
+
+    <div class="seletor-row">
+      <select id="seletorDia"><option value="">Carregando dias...</option></select>
+    </div>
+
+    <div id="resumoDiaWrap"></div>
+    <div id="tabelaWrap"></div>
+  </div>
+
+<script>
+const seletorDia = document.getElementById('seletorDia');
+const resumoDiaWrap = document.getElementById('resumoDiaWrap');
+const tabelaWrap = document.getElementById('tabelaWrap');
+
+function fmtDiaLabel(iso) {
+  const [ano, mes, dia] = iso.split('-');
+  return `${dia}/${mes}/${ano}`;
+}
+
+async function carregarDias() {
+  try {
+    const resp = await fetch('/api/guerrero-dias');
+    const data = await resp.json();
+    if (!data.dias || data.dias.length === 0) {
+      seletorDia.innerHTML = '<option value="">Nenhum dia disponível</option>';
+      return;
+    }
+    seletorDia.innerHTML = data.dias.map((iso) => `<option value="${iso}">${fmtDiaLabel(iso)}</option>`).join('');
+    carregarDia(data.dias[0]);
+  } catch (e) {
+    seletorDia.innerHTML = '<option value="">Erro ao carregar dias</option>';
+  }
+}
+
+async function carregarDia(dia) {
+  tabelaWrap.innerHTML = '<div class="empty">Carregando...</div>';
+  resumoDiaWrap.innerHTML = '';
+  try {
+    const resp = await fetch('/api/guerrero?dia=' + encodeURIComponent(dia));
+    const data = await resp.json();
+    if (!resp.ok) {
+      tabelaWrap.innerHTML = `<div class="empty">${data.erro || 'Erro ao carregar.'}</div>`;
+      return;
+    }
+    if (data.total === 0) {
+      tabelaWrap.innerHTML = '<div class="empty">Nenhuma distribuição neste dia.</div>';
+      return;
+    }
+
+    const faturados = data.itens.filter((i) => i.faturado).length;
+    const pendentes = data.total - faturados;
+    resumoDiaWrap.innerHTML = `
+      <div class="resumo-dia">
+        <div class="item">Total distribuído: <span class="num">${data.total}</span></div>
+        <div class="item">Faturados: <span class="num ok">${faturados}</span></div>
+        <div class="item">Não faturados: <span class="num pend">${pendentes}</span></div>
+      </div>
+    `;
+
+    tabelaWrap.innerHTML = `
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Modelo</th>
+              <th>Chassi</th>
+              <th>Vendedor (distribuição)</th>
+              <th>Cliente (distribuição)</th>
+              <th>Status</th>
+              <th>Vendedor (faturamento)</th>
+              <th>Cliente (faturamento)</th>
+              <th>Data venda</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.itens.map((item) => `
+              <tr>
+                <td>${item.moto || '—'}</td>
+                <td class="chassi-cel">${item.chassi}</td>
+                <td>${item.vendedorDistribuicao || '—'}</td>
+                <td>${item.clienteDistribuicao || '—'}</td>
+                <td>${item.faturado ? '<span class="selo faturado">Faturado</span>' : '<span class="selo pendente">Não faturado</span>'}</td>
+                <td>${item.vendedorFaturamento || '—'}</td>
+                <td>${item.clienteFaturamento || '—'}</td>
+                <td>${item.dataVenda || '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (e) {
+    tabelaWrap.innerHTML = `<div class="empty">Erro ao carregar: ${e.message}</div>`;
+  }
+}
+
+seletorDia.addEventListener('change', () => carregarDia(seletorDia.value));
+
+carregarDias();
+</script>
+</body>
+</html>

@@ -118,6 +118,52 @@
   .tag-bloqueado { color: #f87171; font-size: 11px; font-weight: 700; }
   .empty { color: var(--muted); font-size: 13px; padding: 12px 0; }
   .topo-admin { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+
+  .nome-ip-input {
+    width: 160px;
+    margin: 0;
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  .toggle-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+  .toggle-desc { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+  .switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background: var(--border);
+    border-radius: 999px;
+    transition: 0.15s;
+  }
+  .switch .slider::before {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    left: 3px;
+    top: 3px;
+    background: white;
+    border-radius: 50%;
+    transition: 0.15s;
+  }
+  .switch input:checked + .slider { background: var(--ok); }
+  .switch input:checked + .slider::before { transform: translateX(20px); }
+  .selo-ativo { color: #4ade80; font-size: 11px; font-weight: 700; }
+  .selo-inativo { color: var(--muted); font-size: 11px; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -159,6 +205,27 @@
         <input type="file" id="arquivoFila" accept=".xlsx" />
         <button id="btnUploadFila">Enviar</button>
       </div>
+      <div class="upload-row">
+        <label>Faturamento:</label>
+        <input type="file" id="arquivoFaturamento" accept=".xlsx" />
+        <button id="btnUploadFaturamento">Enviar</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="toggle-row">
+        <h2 style="margin:0">Restringir acesso por whitelist</h2>
+        <label class="switch">
+          <input type="checkbox" id="toggleWhitelist" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="toggle-desc" id="whitelistStatusDesc">Carregando...</div>
+      <table id="tabelaWhitelist"><tbody></tbody></table>
+      <div class="ip-add">
+        <input type="text" id="novoIpWhitelist" placeholder="Ex: 200.150.10.20" />
+        <button id="btnAdicionarWhitelist">Adicionar à whitelist</button>
+      </div>
     </div>
 
     <div class="card">
@@ -174,7 +241,7 @@
       <h2>Acessos recentes (por IP)</h2>
       <div class="empty" style="margin-bottom:8px">Registrado a partir de agora — não há histórico anterior à ativação deste painel.</div>
       <table id="tabelaIps">
-        <thead><tr><th>IP</th><th>Acessos</th><th>Último acesso</th><th></th></tr></thead>
+        <thead><tr><th>IP</th><th>Apelido</th><th>Acessos</th><th>Último acesso</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -226,6 +293,8 @@ function renderStatus(data) {
     <div><div class="rotulo">Base atualizada em</div><div class="valor">${fmtData(data.ultimaAtualizacao)}</div></div>
     <div><div class="rotulo">Fila de espera</div><div class="valor">${data.totalFilaEspera}</div></div>
     <div><div class="rotulo">Fila atualizada em</div><div class="valor">${fmtData(data.filaEsperaAtualizadaEm)}</div></div>
+    <div><div class="rotulo">Faturamento</div><div class="valor">${data.totalFaturamento || 0}</div></div>
+    <div><div class="rotulo">Faturamento atualizado em</div><div class="valor">${fmtData(data.faturamentoAtualizadoEm)}</div></div>
   `;
 }
 
@@ -246,10 +315,80 @@ function renderBloqueados(ipsBloqueados) {
   });
 }
 
+function renderWhitelist(whitelist, ativa) {
+  document.getElementById('toggleWhitelist').checked = ativa;
+  document.getElementById('whitelistStatusDesc').innerHTML = ativa
+    ? '<span class="selo-ativo">ATIVA</span> — só IPs na lista abaixo conseguem usar a busca.'
+    : '<span class="selo-inativo">DESLIGADA</span> — o site continua aberto normalmente. Adicione os IPs que devem ter acesso antes de ativar.';
+
+  const tbody = document.querySelector('#tabelaWhitelist tbody');
+  if (!whitelist.length) {
+    tbody.innerHTML = '<tr><td class="empty">Nenhum IP na whitelist ainda.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = whitelist.map((ip) => `
+    <tr>
+      <td>${ip}</td>
+      <td style="text-align:right"><button class="secundario" data-ip="${ip}" data-acao="remover">Remover</button></td>
+    </tr>
+  `).join('');
+  tbody.querySelectorAll('button[data-acao="remover"]').forEach((btn) => {
+    btn.addEventListener('click', () => alterarWhitelist(btn.dataset.ip, 'remover'));
+  });
+}
+
+async function alterarWhitelist(ip, acao) {
+  try {
+    const resp = await fetch('/api/admin-whitelist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip, acao }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      msgEl.innerHTML = `<div class="msg err">${data.erro}</div>`;
+      return;
+    }
+    msgEl.innerHTML = `<div class="msg ok">IP ${ip} ${acao === 'adicionar' ? 'adicionado à' : 'removido da'} whitelist.</div>`;
+    carregarDados();
+  } catch (e) {
+    msgEl.innerHTML = `<div class="msg err">Erro: ${e.message}</div>`;
+  }
+}
+
+document.getElementById('btnAdicionarWhitelist').addEventListener('click', () => {
+  const ip = document.getElementById('novoIpWhitelist').value.trim();
+  if (!ip) return;
+  alterarWhitelist(ip, 'adicionar');
+  document.getElementById('novoIpWhitelist').value = '';
+});
+
+document.getElementById('toggleWhitelist').addEventListener('change', async (e) => {
+  const acao = e.target.checked ? 'ativar' : 'desativar';
+  try {
+    const resp = await fetch('/api/admin-whitelist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ acao }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      msgEl.innerHTML = `<div class="msg err">${data.erro}</div>`;
+      e.target.checked = !e.target.checked;
+      return;
+    }
+    msgEl.innerHTML = `<div class="msg ok">Whitelist ${acao === 'ativar' ? 'ativada' : 'desativada'}.</div>`;
+    carregarDados();
+  } catch (err) {
+    msgEl.innerHTML = `<div class="msg err">Erro: ${err.message}</div>`;
+    e.target.checked = !e.target.checked;
+  }
+});
+
 function renderIps(ips, ipsBloqueados) {
   const tbody = document.querySelector('#tabelaIps tbody');
   if (!ips.length) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty">Nenhum acesso registrado ainda.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">Nenhum acesso registrado ainda.</td></tr>';
     return;
   }
   tbody.innerHTML = ips.map((item) => {
@@ -257,6 +396,7 @@ function renderIps(ips, ipsBloqueados) {
     return `
       <tr>
         <td>${item.ip} ${bloqueado ? '<span class="tag-bloqueado">BLOQUEADO</span>' : ''}</td>
+        <td><input type="text" class="nome-ip-input" data-ip="${item.ip}" value="${item.nome || ''}" placeholder="Apelido..." /></td>
         <td>${item.total}</td>
         <td>${fmtData(item.ultimoAcesso)}</td>
         <td style="text-align:right">
@@ -270,6 +410,27 @@ function renderIps(ips, ipsBloqueados) {
   tbody.querySelectorAll('button[data-acao]').forEach((btn) => {
     btn.addEventListener('click', () => alterarBloqueio(btn.dataset.ip, btn.dataset.acao));
   });
+  tbody.querySelectorAll('.nome-ip-input').forEach((input) => {
+    input.addEventListener('change', () => salvarNomeIp(input.dataset.ip, input.value.trim()));
+  });
+}
+
+async function salvarNomeIp(ip, nome) {
+  try {
+    const resp = await fetch('/api/admin-nomear-ip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip, nome }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      msgEl.innerHTML = `<div class="msg err">${data.erro}</div>`;
+      return;
+    }
+    msgEl.innerHTML = `<div class="msg ok">Apelido de ${ip} salvo.</div>`;
+  } catch (e) {
+    msgEl.innerHTML = `<div class="msg err">Erro: ${e.message}</div>`;
+  }
 }
 
 async function alterarBloqueio(ip, acao) {
@@ -309,6 +470,7 @@ async function carregarDados() {
     renderStatus(data);
     renderBloqueados(data.ipsBloqueados);
     renderIps(data.ips, data.ipsBloqueados);
+    renderWhitelist(data.whitelist || [], data.whitelistAtiva || false);
   } catch (e) {
     msgEl.innerHTML = `<div class="msg err">Erro ao carregar dados: ${e.message}</div>`;
   }
@@ -336,6 +498,7 @@ async function enviarPlanilha(inputId, endpoint, rotulo) {
 
 document.getElementById('btnUploadBase').addEventListener('click', () => enviarPlanilha('arquivo', '/api/upload', 'Base de chassis'));
 document.getElementById('btnUploadFila').addEventListener('click', () => enviarPlanilha('arquivoFila', '/api/upload-fila', 'Fila de espera'));
+document.getElementById('btnUploadFaturamento').addEventListener('click', () => enviarPlanilha('arquivoFaturamento', '/api/upload-faturamento', 'Faturamento'));
 
 function mostrarLogin() {
   loginWrap.style.display = '';

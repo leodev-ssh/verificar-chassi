@@ -5,6 +5,9 @@ server.log
 .env
 data/ips_bloqueados.json
 data/log_acessos.json
+data/nomes_ips.json
+data/whitelist_ips.json
+data/whitelist_ativa.json
 
 # Dados reais de clientes/vendedores - não versionar
 data/*.xlsx

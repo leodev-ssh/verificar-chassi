@@ -1,7 +1,7 @@
 import { getStore } from '@netlify/blobs';
 import type { Context } from '@netlify/functions';
 import { carregarRegistros, carregarFilaEspera, filaDoModelo, limparUpper, NOME_STORE } from '../../shared/planilha.mjs';
-import { carregarIpsBloqueados, registrarAcesso } from '../../shared/admin.mjs';
+import { carregarIpsBloqueados, registrarAcesso, whitelistAtiva, carregarWhitelist } from '../../shared/admin.mjs';
 
 export default async (req: Request, context: Context) => {
   const url = new URL(req.url);
@@ -13,6 +13,13 @@ export default async (req: Request, context: Context) => {
   const ipsBloqueados = await carregarIpsBloqueados(store);
   if (ip && ipsBloqueados.includes(ip)) {
     return Response.json({ erro: 'Acesso bloqueado.' }, { status: 403 });
+  }
+
+  if (await whitelistAtiva(store)) {
+    const whitelist = await carregarWhitelist(store);
+    if (!ip || !whitelist.includes(ip)) {
+      return Response.json({ erro: 'Acesso restrito. Fale com o administrador para liberar este acesso.' }, { status: 403 });
+    }
   }
 
   // Best-effort: roda em segundo plano, sem atrasar nem poder derrubar a busca.

@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 const NOME_STORE = 'verificar-chassi';
 const CHAVE_REGISTROS = 'registros.json';
 const CHAVE_FILA_ESPERA = 'fila-espera.json';
+const CHAVE_FATURAMENTO = 'faturamento.json';
 
 // --- Normalização de texto (remove nbsp, espaços extras, uppercase) ---
 export function limpar(valor) {
@@ -53,6 +54,7 @@ function normalizarLinha(linha) {
     status: limpar(linha['Coluna1'] ?? linha['MODALIDADE']),
     cod: limpar(linha['CÓD.']),
     envio: formatarData(linha['ENVIO']),
+    envioIso: paraIso(linha['ENVIO']),
     vence: formatarData(linha['VENCE']),
     venceIso: paraIso(linha['VENCE']),
   };
@@ -263,4 +265,74 @@ export function resumoFilaEspera(filaEspera) {
     .sort((a, b) => b.total - a.total);
 }
 
-export { NOME_STORE, CHAVE_REGISTROS, CHAVE_FILA_ESPERA };
+// --- Faturamento (base de vendas, cruzada por chassi com a distribuição) ---
+function normalizarLinhaFaturamento(linha) {
+  const chassi = limparUpper(linha['Chassi']);
+  if (!chassi) return null;
+  return {
+    chassi,
+    cliente: limpar(linha['Cliente']),
+    vendedor: limpar(linha['Vendedor']),
+    // "Data Venda" vem como DD/MM/YYYY, diferente do M/D/YY da distribuição
+    dataVenda: isoParaBr(paraIsoDiaMesAno(linha['Data Venda'])),
+  };
+}
+
+export function processarFaturamento(buffer) {
+  const workbook = XLSX.read(buffer, { type: 'buffer' });
+  const aba = workbook.Sheets[workbook.SheetNames[0]];
+  const linhas = XLSX.utils.sheet_to_json(aba, { defval: '', raw: false });
+
+  const registros = [];
+  for (const linha of linhas) {
+    // A última linha do export é um rodapé de totais, sem chassi real
+    const registro = normalizarLinhaFaturamento(linha);
+    if (!registro) continue;
+    registros.push(registro);
+  }
+
+  return registros;
+}
+
+export async function salvarFaturamento(store, registros) {
+  const payload = {
+    registros,
+    atualizadoEm: new Date().toISOString(),
+  };
+  await store.setJSON(CHAVE_FATURAMENTO, payload);
+  return payload;
+}
+
+export async function carregarFaturamento(store) {
+  const payload = await store.get(CHAVE_FATURAMENTO, { type: 'json' });
+  if (!payload) return { registros: [], atualizadoEm: null };
+  return payload;
+}
+
+// Datas de ENVIO (YYYY-MM-DD) distintas na base de distribuição, mais recentes primeiro
+export function diasDeEnvioDisponiveis(registrosChassi) {
+  const dias = new Set(registrosChassi.map((r) => r.envioIso).filter(Boolean));
+  return Array.from(dias).sort((a, b) => b.localeCompare(a));
+}
+
+// Relatório "Guerrero": chassis distribuídos num dia, cruzados com faturamento
+export function relatorioGuerrero(registrosChassi, registrosFaturamento, envioIso) {
+  const faturamentoPorChassi = new Map(registrosFaturamento.map((f) => [f.chassi, f]));
+  return registrosChassi
+    .filter((r) => r.envioIso === envioIso)
+    .map((r) => {
+      const faturado = faturamentoPorChassi.get(r.chassi);
+      return {
+        moto: r.moto,
+        chassi: r.chassi,
+        vendedorDistribuicao: r.vendedor,
+        clienteDistribuicao: r.cliente,
+        faturado: Boolean(faturado),
+        vendedorFaturamento: faturado ? faturado.vendedor : '',
+        clienteFaturamento: faturado ? faturado.cliente : '',
+        dataVenda: faturado ? faturado.dataVenda : '',
+      };
+    });
+}
+
+export { NOME_STORE, CHAVE_REGISTROS, CHAVE_FILA_ESPERA, CHAVE_FATURAMENTO };
